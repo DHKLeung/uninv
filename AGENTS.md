@@ -98,12 +98,15 @@ _Last updated: 2026-11-06_
   and friends. 10 tests pass.
 - ✅ Dashboard UI working in browser mode (KPIs, accounts, allocation tabs, group chips,
   sortable positions table).
-- ⚠️ **Rust/Tauri app has never been compiled.** `Cargo.lock` has been resolved and committed. The MSVC C++ Build Tools install requires UAC elevation on Windows (winget exit 1602 when run non-interactively). The user should run the installer with admin approval; then `cargo tauri dev` or `cargo run` can compile the desktop shell.
-  Tauri CLI not installed yet (`cargo install tauri-cli --version "^2" --locked`).
-- ⏳ Ready to push commits to `origin master`.
+- ✅ **Rust/Tauri desktop shell compiled successfully:** Native executable (`uninv-desktop.exe`)
+  built with MSVC C++ Build Tools.
+- ✅ **Cross-platform targets & CI:** Automated GitHub Actions matrix across `ubuntu-latest`,
+  `macos-latest`, and `windows-latest` for both Python backend and Tauri Rust shell. Pure-Rust
+  `rustls` TLS configured for cross-platform HTTPS.
+- ✅ Dynamic backend URL switching supported in Rust & JS (essential for iOS connecting to host).
 
 ### Next steps
-1. Install MSVC C++ Build Tools, run Tauri app, verify desktop build.
-2. Persist groups/settings (SQLite) + group editing UI.
-3. First real broker connector (ask the user which broker first).
-4. Bundle the backend as a PyInstaller sidecar so Tauri starts it.
+1. Persist groups/settings (SQLite) + group editing UI.
+2. First real broker connector (ask the user which broker first).
+3. Bundle the backend as a PyInstaller sidecar so Tauri starts it automatically on desktop.
+4. Prepare iOS Xcode project scaffolding (`tauri ios init`).
