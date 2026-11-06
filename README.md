@@ -85,7 +85,7 @@ uv sync
 cd ..
 
 # 2. Run backend + desktop app together (Ctrl+C stops both)
-.\scripts\dev.ps1
+.\scripts\dev.ps1       # or .\scripts\dev.cmd if PowerShell execution policy blocks .ps1
 ```
 
 The first desktop build compiles the Rust dependencies and takes a few minutes. Later builds

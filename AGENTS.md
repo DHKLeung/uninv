@@ -19,6 +19,7 @@ strategy builder, live prices, etc. (roadmap in `README.md`).
 - `docs/architecture.md`: design decisions and the reasons for them. Update it when a decision
   changes.
 - `scripts/dev.ps1`: runs backend + desktop app (`-Browser` for UI in a browser, no Rust).
+- `scripts/dev.cmd`: Windows cmd/PowerShell wrapper (bypasses execution policy restrictions).
 - `scripts/dev.sh`: macOS/Linux equivalent for bash/zsh.
 
 Data flow: UI → `invoke("api_get", {path})` → Rust proxy → `http://<host>:8000/api/v1/...` →
@@ -67,7 +68,7 @@ cd backend; uv sync                         # install deps
 cd backend; uv run uninv-backend --reload   # API :8000, docs at /docs
 cd backend; uv run pytest                   # tests (must pass before commit)
 cd backend; uv run ruff format .; uv run ruff check --fix .
-.\scripts\dev.ps1                           # backend + desktop app
+.\scripts\dev.ps1                           # backend + desktop app (or .\scripts\dev.cmd)
 .\scripts\dev.ps1 -Browser                  # backend + UI at http://127.0.0.1:1420
 cd desktop\src-tauri; cargo tauri dev       # or `cargo run` (backend must be running)
 cd desktop\src-tauri; cargo tauri build     # installer
