@@ -3,102 +3,101 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>uninv</title>
+    <title>uninv - Unified Portfolio</title>
     <link rel="stylesheet" href="styles.css" />
     <script type="module" src="js/main.js"></script>
   </head>
   <body>
+    <!-- Top Navigation Bar -->
     <header class="topbar">
-      <div class="brand">
-        <span class="logo">u</span>
-        <span class="brand-name">uninv</span>
-        <span class="brand-sub">Unified Portfolio</span>
+      <div class="topbar-left">
+        <div class="brand">
+          <span class="logo">u</span>
+          <span class="brand-name">uninv</span>
+        </div>
+        <nav class="nav-tabs">
+          <button type="button" class="nav-tab active">Portfolio</button>
+          <button type="button" class="nav-tab disabled" title="Coming soon">Orders</button>
+          <button type="button" class="nav-tab disabled" title="Coming soon">Analytics</button>
+          <button type="button" class="nav-tab disabled" title="Coming soon">Settings</button>
+        </nav>
       </div>
+
       <div class="topbar-right">
-        <span id="simulated-badge" class="badge badge-warn" hidden>Simulated data</span>
-        <span id="as-of" class="muted"></span>
-        <button id="refresh-btn" class="btn" type="button">Refresh</button>
+        <span id="as-of" class="as-of-time"></span>
+        <div class="currency-picker">
+          <label for="currency-select" class="currency-label">Currency</label>
+          <select id="currency-select" class="currency-dropdown">
+            <option value="USD">USD ($)</option>
+            <option value="GBP">GBP (£)</option>
+          </select>
+        </div>
+        <button id="refresh-btn" class="btn btn-primary" type="button">Refresh</button>
       </div>
     </header>
 
-    <main>
+    <main class="app-container">
       <div id="error-banner" class="banner banner-error" hidden></div>
 
-      <!-- Headline numbers -->
+      <!-- Headline KPIs in British English -->
       <section class="kpis">
-        <div class="kpi">
-          <div class="kpi-label">Net liquidation</div>
+        <div class="kpi-card">
+          <div class="kpi-label">NET LIQUIDATION VALUE</div>
           <div class="kpi-value" id="kpi-netliq">–</div>
         </div>
-        <div class="kpi">
-          <div class="kpi-label">Positions value</div>
+        <div class="kpi-card">
+          <div class="kpi-label">POSITIONS VALUE</div>
           <div class="kpi-value" id="kpi-positions">–</div>
         </div>
-        <div class="kpi">
-          <div class="kpi-label">Cash</div>
+        <div class="kpi-card">
+          <div class="kpi-label">CASH BALANCE</div>
           <div class="kpi-value" id="kpi-cash">–</div>
         </div>
-        <div class="kpi">
-          <div class="kpi-label">Unrealized P&amp;L</div>
+        <div class="kpi-card">
+          <div class="kpi-label">UNREALISED P&amp;L</div>
           <div class="kpi-value" id="kpi-pnl">–</div>
           <div class="kpi-sub" id="kpi-pnl-pct"></div>
         </div>
       </section>
 
-      <section class="grid-2">
-        <!-- Accounts across brokers -->
-        <div class="panel">
-          <div class="panel-header">
+      <!-- Accounts Section -->
+      <section class="panel accounts-panel">
+        <div class="panel-header">
+          <div class="panel-title-group">
             <h2>Accounts</h2>
             <span class="muted" id="accounts-caption"></span>
           </div>
-          <div id="accounts-list" class="rows"></div>
         </div>
-
-        <!-- Allocation breakdowns -->
-        <div class="panel">
-          <div class="panel-header">
-            <h2>Allocation</h2>
-            <div class="tabs" id="allocation-tabs">
-              <button type="button" data-key="by_asset_class" class="tab active">Asset class</button>
-              <button type="button" data-key="groups" class="tab">Groups</button>
-              <button type="button" data-key="by_currency" class="tab">Currency</button>
-              <button type="button" data-key="by_symbol" class="tab">Holdings</button>
-            </div>
-          </div>
-          <div id="allocation-list" class="rows"></div>
-          <p id="allocation-note" class="muted small" hidden>
-            Groups can overlap, so their weights don't have to add up to 100%.
-          </p>
-        </div>
+        <div id="accounts-grid" class="accounts-grid"></div>
       </section>
 
-      <!-- Positions table -->
-      <section class="panel">
-        <div class="panel-header">
-          <h2>Positions <span class="muted" id="positions-count"></span></h2>
-          <div class="filters">
-            <input id="search" type="search" placeholder="Search symbol or name…" />
-            <select id="account-filter">
-              <option value="">All accounts</option>
-            </select>
+      <!-- Positions Section -->
+      <section class="panel positions-panel">
+        <div class="panel-header positions-header">
+          <div class="positions-filter-bar">
+            <!-- Account filter buttons (All, IBKR-HK(0728), Futubull-HK(7283)...) -->
+            <div id="account-filter-pills" class="filter-pills"></div>
+          </div>
+          <div class="positions-search-bar">
+            <input id="search" type="search" placeholder="Search symbol or instrument…" />
+            <span class="positions-count-badge" id="positions-count"></span>
           </div>
         </div>
-        <div id="group-chips" class="chips"></div>
+
         <div class="table-wrap">
           <table id="positions-table">
             <thead>
               <tr>
+                <th data-sort="instrument">Instrument</th>
                 <th data-sort="symbol">Symbol</th>
-                <th data-sort="account_id">Account</th>
-                <th data-sort="asset_class">Type</th>
-                <th data-sort="quantity" class="num">Qty</th>
-                <th data-sort="average_cost" class="num">Avg cost</th>
-                <th data-sort="market_price" class="num">Price</th>
-                <th data-sort="market_value_base" class="num">Market value</th>
-                <th data-sort="unrealized_pnl_base" class="num">Unrealized P&amp;L</th>
-                <th data-sort="weight" class="num">Weight</th>
-                <th>Groups</th>
+                <th data-sort="account_alias">Account</th>
+                <th data-sort="expiry_date">Expiry Date</th>
+                <th data-sort="position" class="num">Position</th>
+                <th data-sort="average_price" class="num">Avg Price</th>
+                <th data-sort="mark_price" class="num">Mark Price</th>
+                <th data-sort="currency" class="num">Currency</th>
+                <th data-sort="market_value" class="num">Positions Value</th>
+                <th data-sort="unrealised_pnl" class="num">Unrealised P&amp;L</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -108,8 +107,13 @@
     </main>
 
     <footer class="statusbar">
-      <span id="backend-status" class="dot dot-unknown"></span>
-      <span id="backend-label" class="muted">Backend: connecting…</span>
+      <div class="statusbar-left">
+        <span id="backend-status" class="dot dot-unknown"></span>
+        <span id="backend-label" class="muted">Backend: connecting…</span>
+      </div>
+      <div class="statusbar-right">
+        <span class="muted">16:9 HD Display Ready (1920×1080)</span>
+      </div>
     </footer>
   </body>
 </html>

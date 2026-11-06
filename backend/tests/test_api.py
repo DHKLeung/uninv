@@ -1,13 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from uninv_backend.api.routes import get_portfolio_service
 from uninv_backend.app import app
-from uninv_backend.brokers.base import BrokerConnector
-from uninv_backend.brokers.mock import mock_futu, mock_ibkr
-from uninv_backend.fx import StaticFxProvider
-from uninv_backend.models import Broker
-from uninv_backend.portfolio.service import PortfolioService
 
 
 @pytest.fixture
@@ -27,87 +21,96 @@ def test_health(client: TestClient) -> None:
     assert resp.json()["status"] == "ok"
 
 
-def test_portfolio_totals_are_consistent(client: TestClient) -> None:
-    data = client.get("/api/v1/portfolio").json()
-    totals = data["totals"]
-
-    assert data["base_currency"] == "USD"
-    assert totals["net_liquidation"] == pytest.approx(totals["positions_value"] + totals["cash"])
-    assert sum(p["market_value_base"] for p in data["positions"]) == pytest.approx(
-        totals["positions_value"]
-    )
-    # Asset-class and currency breakdowns include cash, so they cover 100%.
-    assert sum(s["weight"] for s in data["by_asset_class"]) == pytest.approx(1.0)
-    assert sum(s["weight"] for s in data["by_currency"]) == pytest.approx(1.0)
-    assert sum(a["weight"] for a in data["accounts"]) == pytest.approx(1.0)
-    assert data["errors"] == []
-
-
-def test_portfolio_covers_all_mock_brokers(client: TestClient) -> None:
-    data = client.get("/api/v1/portfolio").json()
-    assert {b["id"] for b in data["brokers"]} == {"ibkr", "futu", "schwab"}
-    assert len(data["accounts"]) == 4
-
-
-def test_symbol_consolidated_across_brokers(client: TestClient) -> None:
-    data = client.get("/api/v1/portfolio").json()
-    msft = next(s for s in data["by_symbol"] if s["key"] == "MSFT")
-    assert msft["position_count"] == 2  # IBKR + Schwab
-
-
-def test_hkd_positions_converted_to_base(client: TestClient) -> None:
-    data = client.get("/api/v1/portfolio").json()
-    tencent = next(p for p in data["positions"] if p["symbol"] == "0700.HK")
-    assert tencent["currency"] == "HKD"
-    assert tencent["market_value_base"] == pytest.approx(tencent["market_value"] * 0.1285)
-
-
-def test_option_uses_multiplier(client: TestClient) -> None:
-    data = client.get("/api/v1/portfolio").json()
-    opt = next(p for p in data["positions"] if p["asset_class"] == "option")
-    assert opt["market_value"] == pytest.approx(opt["quantity"] * opt["market_price"] * 100)
-    assert opt["option"]["underlying"] == "AAPL"
-
-
-def test_positions_filter_by_group(client: TestClient) -> None:
-    resp = client.get("/api/v1/positions", params={"group_id": "hong-kong"})
+def test_brokers_endpoint(client: TestClient) -> None:
+    resp = client.get("/api/v1/brokers")
     assert resp.status_code == 200
-    assert {p["symbol"] for p in resp.json()} == {"0700.HK", "2800.HK", "9988.HK"}
+    brokers = resp.json()
+    assert len(brokers) == 2
+    assert brokers == [
+        {"id": "ibkr-hk", "name": "Interactive Brokers (Hong Kong)"},
+        {"id": "futubull-hk", "name": "Futubull (Hong Kong)"},
+    ]
 
 
-def test_positions_filter_by_account(client: TestClient) -> None:
-    resp = client.get("/api/v1/positions", params={"account_id": "schwab-IRA-4821"})
-    assert {p["symbol"] for p in resp.json()} == {"VTI", "SCHD", "BND"}
+def test_accounts_ibkr_endpoint(client: TestClient) -> None:
+    resp = client.get("/api/v1/accounts/ibkr-hk")
+    assert resp.status_code == 200
+    accounts = resp.json()
+    assert len(accounts) == 1
+    assert accounts[0] == {
+        "account_id": "U16110728",
+        "broker_id": "ibkr-hk",
+        "alias": "IBKR-HK(0728)",
+    }
 
 
-def test_positions_unknown_filters_404(client: TestClient) -> None:
-    assert client.get("/api/v1/positions", params={"group_id": "nope"}).status_code == 404
-    assert client.get("/api/v1/positions", params={"account_id": "nope"}).status_code == 404
+def test_accounts_futubull_endpoint(client: TestClient) -> None:
+    resp = client.get("/api/v1/accounts/futubull-hk")
+    assert resp.status_code == 200
+    accounts = resp.json()
+    assert len(accounts) == 3
+    assert [a["alias"] for a in accounts] == [
+        "Futubull-HK(7283)",
+        "Futubull-HK(7612)",
+        "Futubull-HK(0281)",
+    ]
+    assert [a["account_id"] for a in accounts] == [
+        "1001279250287283",
+        "1001281798927612",
+        "1001272756530281",
+    ]
 
 
-class _BrokenBroker(BrokerConnector):
-    @property
-    def info(self) -> Broker:
-        return Broker(id="broken", name="Broken", is_simulated=True)
-
-    async def get_accounts(self):
-        raise ConnectionError("login expired")
-
-    async def get_positions(self):
-        return []
+def test_accounts_unknown_broker_404(client: TestClient) -> None:
+    resp = client.get("/api/v1/accounts/unknown-broker")
+    assert resp.status_code == 404
 
 
-def test_failing_broker_does_not_break_portfolio(client: TestClient) -> None:
-    service = PortfolioService(
-        connectors=[mock_ibkr(), mock_futu(), _BrokenBroker()],
-        groups=[],
-        fx=StaticFxProvider(),
-    )
-    app.dependency_overrides[get_portfolio_service] = lambda: service
-    try:
-        data = client.get("/api/v1/portfolio").json()
-    finally:
-        app.dependency_overrides.clear()
+def test_positions_ibkr_endpoint(client: TestClient) -> None:
+    resp = client.get("/api/v1/positions/ibkr-hk")
+    assert resp.status_code == 200
+    positions = resp.json()
+    assert len(positions) == 5
 
-    assert data["errors"] == [{"broker_id": "broken", "message": "login expired"}]
-    assert {a["account"]["broker_id"] for a in data["accounts"]} == {"ibkr", "futu"}
+    # Check required fields exist on every position
+    for p in positions:
+        assert "instrument" in p
+        assert "symbol" in p
+        assert "position" in p
+        assert "average_price" in p
+        assert "mark_price" in p
+        assert "currency" in p
+        assert "expiry_date" in p
+        assert p["currency"] == "USD"
+
+    # Verify options & futures options have expiry_date
+    aapl_opt = next(p for p in positions if p["symbol"] == "AAPL 261218C00240000")
+    assert aapl_opt["expiry_date"] == "2026-12-18"
+    assert aapl_opt["multiplier"] == 100.0
+
+    # Verify equity has null expiry_date
+    aapl_stock = next(p for p in positions if p["symbol"] == "AAPL")
+    assert aapl_stock["expiry_date"] is None
+
+
+def test_positions_futubull_endpoint(client: TestClient) -> None:
+    resp = client.get("/api/v1/positions/futubull-hk")
+    assert resp.status_code == 200
+    positions = resp.json()
+    assert len(positions) == 9
+
+    # Filter by specific account
+    acct_id = "1001279250287283"
+    filtered = client.get(f"/api/v1/positions/futubull-hk?account_id={acct_id}").json()
+    assert len(filtered) == 3
+    assert all(p["account_id"] == acct_id for p in filtered)
+
+
+def test_positions_unknown_account_404(client: TestClient) -> None:
+    resp = client.get("/api/v1/positions/futubull-hk?account_id=invalid-id")
+    assert resp.status_code == 404
+
+
+def test_positions_unknown_broker_404(client: TestClient) -> None:
+    resp = client.get("/api/v1/positions/unknown-broker")
+    assert resp.status_code == 404

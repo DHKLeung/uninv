@@ -13,8 +13,8 @@ broker accounts, plus user-defined groups of positions that can span brokers. La
 strategy builder, live prices, etc. (roadmap in `README.md`).
 
 - `backend/`: Python 3.13 + FastAPI, managed with **uv**. All business logic: broker
-  connectors, aggregation, FX, groups. → see `backend/AGENTS.md`
-- `desktop/`: **Tauri 2** app. `src/` = plain HTML/CSS/JS UI (no Node, no bundler);
+  accounts metadata and positions. → see `backend/AGENTS.md`
+- `desktop/`: **Tauri 2** app (16:9 1920x1080). `src/` = plain HTML/CSS/JS UI (no Node, no bundler);
   `src-tauri/` = thin Rust shell. → see `desktop/AGENTS.md`
 - `docs/architecture.md`: design decisions and the reasons for them. Update it when a decision
   changes.
@@ -23,7 +23,7 @@ strategy builder, live prices, etc. (roadmap in `README.md`).
 - `scripts/dev.sh`: macOS/Linux equivalent for bash/zsh.
 
 Data flow: UI → `invoke("api_get", {path})` → Rust proxy → `http://<host>:8000/api/v1/...` →
-FastAPI → `PortfolioService` → `BrokerConnector`s.
+FastAPI.
 
 ## Target platforms
 
@@ -94,20 +94,23 @@ backend running, then
 
 _Last updated: 2026-11-06_
 
-- ✅ Backend scaffolded and tested: simulated IBKR / Futu / Schwab (4 accounts, HKD + USD,
-  MSFT at two brokers, an AAPL option), FX to USD, 5 hardcoded groups, `/api/v1/portfolio`
-  and friends. 10 tests pass.
-- ✅ Dashboard UI working in browser mode (KPIs, accounts, allocation tabs, group chips,
-  sortable positions table).
-- ✅ **Rust/Tauri desktop shell compiled successfully:** Native executable (`uninv-desktop.exe`)
-  built with MSVC C++ Build Tools. `tauri-cli 2.12.4` installed globally.
-- ✅ **Cross-platform targets & CI:** Automated GitHub Actions matrix across `ubuntu-latest`,
-  `macos-latest`, and `windows-latest` for both Python backend and Tauri Rust shell. Pure-Rust
-  `rustls` TLS configured for cross-platform HTTPS.
-- ✅ Dynamic backend URL switching supported in Rust & JS (essential for iOS connecting to host).
+- ✅ Backend rewritten to streamlined Pydantic v2 architecture:
+  - Brokers: `Interactive Brokers (Hong Kong)` (`ibkr-hk`) and `Futubull (Hong Kong)` (`futubull-hk`).
+  - Accounts metadata: `IBKR-HK(0728)`, `Futubull-HK(7283)`, `Futubull-HK(7612)`, `Futubull-HK(0281)`.
+  - Positions: mock data across stocks, ETFs, futures, options, and futures options (all in USD).
+  - Clean endpoints: `GET /api/v1/brokers`, `GET /api/v1/accounts/{broker_id}`, `GET /api/v1/positions/{broker_id}`.
+  - All 10 backend tests pass, Ruff check passes.
+- ✅ GUI Application updated:
+  - Configured for 16:9 1920×1080 display layout (`tauri.conf.json` and responsive CSS).
+  - Navigation tab header with `Portfolio` active tab.
+  - British English KPI cards: `NET LIQUIDATION VALUE`, `POSITIONS VALUE`, `CASH BALANCE`, `UNREALISED P&L` (with % and no "on cost").
+  - Top right: As-of timestamp, currency selector (USD `$` and GBP `£` at 0.7487 FX rate), refresh button.
+  - Accounts section: Account cards with balances, unrealised P&L, and quick-filter click support.
+  - Positions section: Account filter pills (`All`, `IBKR-HK(0728)`, etc.), search box, and 10-column table.
+  - Removed obsolete simulated badge, allocation panels, and groups.
+- ✅ Rust shell compiles cleanly (`cargo check`).
 
 ### Next steps
-1. Persist groups/settings (SQLite) + group editing UI.
-2. First real broker connector (ask the user which broker first).
-3. Bundle the backend as a PyInstaller sidecar so Tauri starts it automatically on desktop.
-4. Prepare iOS Xcode project scaffolding (`tauri ios init`).
+1. Real broker connector integrations (IBKR / Futubull).
+2. Live market data and live FX rate pulling.
+3. PyInstaller sidecar bundling for single-installer desktop deployment.

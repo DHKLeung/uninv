@@ -1,33 +1,63 @@
 /**
- * Dashboard logic: load the unified portfolio from the backend and render it.
+ * uninv - Unified Investing Dashboard
  *
- * The whole page comes from one call, GET /api/v1/portfolio. Filtering and sorting
- * happen in the browser.
+ * Multi-account, multi-broker positions viewer supporting USD and GBP display.
  */
 
 import { apiGet, backendUrl } from "./api.js";
-import { esc, money, pct, pnlClass, qty, signedMoney } from "./format.js";
+import { esc, formatMoney, formatPct, formatQty, formatSignedMoney, pnlClass } from "./format.js";
 
 const $ = (sel) => document.querySelector(sel);
 
 const state = {
-  summary: null,
-  allocationKey: "by_asset_class",
-  groupFilter: null, // group id or null
-  accountFilter: "", // account id or ""
+  brokers: [],
+  accounts: [], // [{ account_id, broker_id, alias, broker_name }]
+  positions: [],
+  selectedAccount: "", // empty for "All", or account_id / alias
   search: "",
-  sort: { key: "market_value_base", dir: -1 },
+  currency: "USD",
+  cashBalanceUsd: 150000.0, // USD cash balance
+  lastUpdated: null,
+  sort: { key: "market_value", dir: -1 },
 };
 
 // ---------------------------------------------------------------------------------------
-// Loading
+// Data Loading
 // ---------------------------------------------------------------------------------------
 
 async function load() {
   const btn = $("#refresh-btn");
   btn.disabled = true;
+  btn.textContent = "Loading…";
+
   try {
-    state.summary = await apiGet("/api/v1/portfolio");
+    // 1. Fetch brokers
+    const brokers = await apiGet("/api/v1/brokers");
+    state.brokers = brokers;
+
+    // 2. Fetch accounts for each broker concurrently
+    const brokerMap = Object.fromEntries(brokers.map((b) => [b.id, b.name]));
+    const accountPromises = brokers.map((b) => apiGet(`/api/v1/accounts/${b.id}`));
+    const accountsNested = await Promise.all(accountPromises);
+
+    const allAccounts = accountsNested.flat().map((acct) => ({
+      ...acct,
+      broker_name: brokerMap[acct.broker_id] ?? acct.broker_id,
+    }));
+    state.accounts = allAccounts;
+
+    const accountAliasMap = Object.fromEntries(allAccounts.map((a) => [a.account_id, a.alias]));
+
+    // 3. Fetch positions for each broker concurrently
+    const positionPromises = brokers.map((b) => apiGet(`/api/v1/positions/${b.id}`));
+    const positionsNested = await Promise.all(positionPromises);
+
+    state.positions = positionsNested.flat().map((p) => ({
+      ...p,
+      account_alias: accountAliasMap[p.account_id] ?? p.account_id,
+    }));
+
+    state.lastUpdated = new Date();
     setBackendStatus(true);
     hideError();
     render();
@@ -36,6 +66,7 @@ async function load() {
     showError(String(err?.message ?? err));
   } finally {
     btn.disabled = false;
+    btn.textContent = "Refresh";
   }
 }
 
@@ -60,239 +91,216 @@ function hideError() {
 // ---------------------------------------------------------------------------------------
 
 function render() {
-  const s = state.summary;
-  if (!s) return;
-  renderHeader(s);
-  renderKpis(s);
-  renderAccounts(s);
-  renderAllocation(s);
-  renderFilters(s);
-  renderPositions(s);
+  renderHeader();
+  renderKpis();
+  renderAccounts();
+  renderFilterPills();
+  renderPositions();
 }
 
-function renderHeader(s) {
-  $("#as-of").textContent = `As of ${new Date(s.as_of).toLocaleString()} · ${s.base_currency}`;
-  $("#simulated-badge").hidden = !s.brokers.some((b) => b.is_simulated);
+function renderHeader() {
+  if (state.lastUpdated) {
+    const formattedDate = state.lastUpdated.toLocaleString("en-GB", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+    $("#as-of").textContent = `As of ${formattedDate}`;
+  }
+  $("#currency-select").value = state.currency;
+}
 
-  if (s.errors.length) {
-    showError(s.errors.map((e) => `${e.broker_id}: ${e.message}`).join(" · "));
+function renderKpis() {
+  const ccy = state.currency;
+  const positionsValUsd = state.positions.reduce((acc, p) => acc + p.market_value, 0);
+  const cashValUsd = state.cashBalanceUsd;
+  const netLiqUsd = positionsValUsd + cashValUsd;
+
+  const totalCostBasis = state.positions.reduce((acc, p) => acc + p.cost_basis, 0);
+  const totalUnrealisedPnlUsd = state.positions.reduce((acc, p) => acc + p.unrealised_pnl, 0);
+  const totalPnlPct = totalCostBasis !== 0 ? totalUnrealisedPnlUsd / Math.abs(totalCostBasis) : 0;
+
+  // British English KPI displays
+  $("#kpi-netliq").textContent = formatMoney(netLiqUsd, ccy);
+  $("#kpi-positions").textContent = formatMoney(positionsValUsd, ccy);
+  $("#kpi-cash").textContent = formatMoney(cashValUsd, ccy);
+
+  const pnlEl = $("#kpi-pnl");
+  pnlEl.textContent = formatSignedMoney(totalUnrealisedPnlUsd, ccy);
+  pnlEl.className = `kpi-value ${pnlClass(totalUnrealisedPnlUsd)}`;
+
+  const pnlPctEl = $("#kpi-pnl-pct");
+  pnlPctEl.textContent = formatPct(totalPnlPct, { signed: true });
+  pnlPctEl.className = `kpi-sub ${pnlClass(totalUnrealisedPnlUsd)}`;
+}
+
+function renderAccounts() {
+  const ccy = state.currency;
+  $("#accounts-caption").textContent = `${state.accounts.length} accounts · ${state.brokers.length} brokers`;
+
+  const grid = $("#accounts-grid");
+  grid.innerHTML = state.accounts
+    .map((acct) => {
+      const acctPositions = state.positions.filter((p) => p.account_id === acct.account_id);
+      const acctValUsd = acctPositions.reduce((acc, p) => acc + p.market_value, 0);
+      const acctPnlUsd = acctPositions.reduce((acc, p) => acc + p.unrealised_pnl, 0);
+      const acctCostBasis = acctPositions.reduce((acc, p) => acc + p.cost_basis, 0);
+      const acctPnlPct = acctCostBasis !== 0 ? acctPnlUsd / Math.abs(acctCostBasis) : 0;
+      const isSelected = state.selectedAccount === acct.account_id;
+
+      return `
+      <div class="account-card ${isSelected ? "selected" : ""}" data-account="${esc(acct.account_id)}">
+        <div class="account-card-header">
+          <div class="account-alias">${esc(acct.alias)}</div>
+          <div class="account-badge">${esc(acct.broker_name)}</div>
+        </div>
+        <div class="account-number muted">${esc(acct.account_id)} · ${acctPositions.length} positions</div>
+        <div class="account-metrics">
+          <div>
+            <div class="metric-label">Positions Value</div>
+            <div class="metric-value">${formatMoney(acctValUsd, ccy)}</div>
+          </div>
+          <div class="text-right">
+            <div class="metric-label">Unrealised P&amp;L</div>
+            <div class="metric-value ${pnlClass(acctPnlUsd)}">
+              ${formatSignedMoney(acctPnlUsd, ccy)}
+              <span class="metric-pct">(${formatPct(acctPnlPct, { signed: true })})</span>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  for (const card of grid.querySelectorAll(".account-card")) {
+    card.addEventListener("click", () => {
+      const id = card.dataset.account;
+      state.selectedAccount = state.selectedAccount === id ? "" : id;
+      renderFilterPills();
+      renderAccounts();
+      renderPositions();
+    });
   }
 }
 
-function renderKpis(s) {
-  const t = s.totals;
-  const ccy = s.base_currency;
-  $("#kpi-netliq").textContent = money(t.net_liquidation, ccy);
-  $("#kpi-positions").textContent = money(t.positions_value, ccy);
-  $("#kpi-cash").textContent = money(t.cash, ccy);
+function renderFilterPills() {
+  const pillsContainer = $("#account-filter-pills");
+  let pillsHtml = `
+    <button type="button" class="filter-pill ${state.selectedAccount === "" ? "active" : ""}" data-filter="">
+      All
+    </button>`;
 
-  const pnl = $("#kpi-pnl");
-  pnl.textContent = signedMoney(t.unrealized_pnl, ccy);
-  pnl.className = `kpi-value ${pnlClass(t.unrealized_pnl)}`;
-  const pnlPct = $("#kpi-pnl-pct");
-  pnlPct.textContent = `${pct(t.unrealized_pnl_pct, { signed: true })} on cost`;
-  pnlPct.className = `kpi-sub ${pnlClass(t.unrealized_pnl)}`;
-}
-
-function renderAccounts(s) {
-  const ccy = s.base_currency;
-  $("#accounts-caption").textContent =
-    `${s.accounts.length} accounts · ${s.brokers.length} brokers`;
-
-  $("#accounts-list").innerHTML = s.accounts
+  pillsHtml += state.accounts
     .map(
       (a) => `
-      <div class="row clickable ${state.accountFilter === a.account.id ? "selected" : ""}"
-           data-account="${esc(a.account.id)}">
-        <div class="row-main">
-          <div class="row-title">${esc(a.account.name)}
-            <span class="tag">${esc(a.account.account_type)}</span>
-            <span class="tag">${esc(a.account.currency)}</span>
-          </div>
-          <div class="row-sub muted">${esc(a.broker_name)} · ${a.position_count} positions ·
-            cash ${money(a.cash, ccy, { compact: true })}</div>
-          ${bar(a.weight)}
-        </div>
-        <div class="row-figures">
-          <div class="strong">${money(a.net_liquidation, ccy)}</div>
-          <div class="small ${pnlClass(a.unrealized_pnl)}">${signedMoney(a.unrealized_pnl, ccy)}</div>
-          <div class="small muted">${pct(a.weight)}</div>
-        </div>
-      </div>`,
+      <button type="button" class="filter-pill ${state.selectedAccount === a.account_id ? "active" : ""}" data-filter="${esc(a.account_id)}">
+        ${esc(a.alias)}
+      </button>`,
     )
     .join("");
 
-  for (const el of document.querySelectorAll("#accounts-list [data-account]")) {
-    el.addEventListener("click", () => {
-      const id = el.dataset.account;
-      state.accountFilter = state.accountFilter === id ? "" : id;
-      render();
+  pillsContainer.innerHTML = pillsHtml;
+
+  for (const btn of pillsContainer.querySelectorAll(".filter-pill")) {
+    btn.addEventListener("click", () => {
+      state.selectedAccount = btn.dataset.filter;
+      renderFilterPills();
+      renderAccounts();
+      renderPositions();
     });
   }
 }
 
-function renderAllocation(s) {
-  const ccy = s.base_currency;
-  const slices = s[state.allocationKey] ?? [];
-  const max = Math.max(...slices.map((x) => Math.abs(x.weight)), 0.0001);
-
-  $("#allocation-note").hidden = state.allocationKey !== "groups";
-  $("#allocation-list").innerHTML = slices
-    .slice(0, 12)
-    .map(
-      (x) => `
-      <div class="row">
-        <div class="row-main">
-          <div class="row-title">
-            ${x.color ? `<span class="swatch" style="background:${esc(x.color)}"></span>` : ""}
-            ${esc(state.allocationKey === "by_symbol" ? x.key : x.label)}
-            ${state.allocationKey === "by_symbol" ? `<span class="muted small">${esc(x.label)}</span>` : ""}
-          </div>
-          ${bar(x.weight / max, x.color)}
-        </div>
-        <div class="row-figures">
-          <div class="strong">${money(x.market_value, ccy)}</div>
-          <div class="small muted">${pct(x.weight)}${x.position_count ? ` · ${x.position_count} pos` : ""}</div>
-        </div>
-      </div>`,
-    )
-    .join("");
-}
-
-function renderFilters(s) {
-  // Account dropdown
-  const select = $("#account-filter");
-  select.innerHTML =
-    `<option value="">All accounts</option>` +
-    s.accounts
-      .map((a) => `<option value="${esc(a.account.id)}">${esc(a.broker_name)} · ${esc(a.account.name)}</option>`)
-      .join("");
-  select.value = state.accountFilter;
-
-  // Group chips
-  const groups = s.groups;
-  $("#group-chips").innerHTML =
-    `<button type="button" class="chip ${state.groupFilter === null ? "active" : ""}" data-group="">All</button>` +
-    groups
-      .map(
-        (g) => `
-        <button type="button" class="chip ${state.groupFilter === g.key ? "active" : ""}" data-group="${esc(g.key)}">
-          <span class="swatch" style="background:${esc(g.color ?? "#888")}"></span>${esc(g.label)}
-          <span class="muted">${g.position_count}</span>
-        </button>`,
-      )
-      .join("");
-
-  for (const el of document.querySelectorAll("#group-chips [data-group]")) {
-    el.addEventListener("click", () => {
-      state.groupFilter = el.dataset.group || null;
-      render();
-    });
-  }
-}
-
-function renderPositions(s) {
-  const ccy = s.base_currency;
-  const accountNames = Object.fromEntries(s.accounts.map((a) => [a.account.id, a]));
-  const groupColors = Object.fromEntries(s.groups.map((g) => [g.key, g]));
+function renderPositions() {
+  const ccy = state.currency;
   const q = state.search.trim().toLowerCase();
 
-  let rows = s.positions.filter(
-    (p) =>
-      (!state.accountFilter || p.account_id === state.accountFilter) &&
-      (!state.groupFilter || p.group_ids.includes(state.groupFilter)) &&
-      (!q || p.symbol.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)),
-  );
+  let rows = state.positions.filter((p) => {
+    const matchAccount = !state.selectedAccount || p.account_id === state.selectedAccount;
+    const matchSearch =
+      !q ||
+      p.symbol.toLowerCase().includes(q) ||
+      p.instrument.toLowerCase().includes(q) ||
+      p.account_alias.toLowerCase().includes(q);
+    return matchAccount && matchSearch;
+  });
 
   const { key, dir } = state.sort;
   rows = rows.toSorted((a, b) => {
-    const x = a[key];
-    const y = b[key];
-    return (typeof x === "string" ? x.localeCompare(y) : x - y) * dir;
+    let x = a[key];
+    let y = b[key];
+    if (x === null || x === undefined) x = "";
+    if (y === null || y === undefined) y = "";
+    if (typeof x === "number" && typeof y === "number") {
+      return (x - y) * dir;
+    }
+    return String(x).localeCompare(String(y)) * dir;
   });
 
-  const total = rows.reduce((acc, p) => acc + p.market_value_base, 0);
-  $("#positions-count").textContent = `${rows.length} · ${money(total, ccy)}`;
+  const totalFilteredValueUsd = rows.reduce((acc, p) => acc + p.market_value, 0);
+  $("#positions-count").textContent = `${rows.length} positions · ${formatMoney(totalFilteredValueUsd, ccy)}`;
 
   for (const th of document.querySelectorAll("#positions-table th[data-sort]")) {
     th.classList.toggle("sorted", th.dataset.sort === key);
     th.dataset.dir = th.dataset.sort === key ? (dir > 0 ? "asc" : "desc") : "";
   }
 
-  $("#positions-table tbody").innerHTML = rows.length
+  const tbody = $("#positions-table tbody");
+  tbody.innerHTML = rows.length
     ? rows
         .map((p) => {
-          const acct = accountNames[p.account_id];
-          const dots = p.group_ids
-            .map((g) => groupColors[g])
-            .filter(Boolean)
-            .map((g) => `<span class="swatch" title="${esc(g.label)}" style="background:${esc(g.color)}"></span>`)
-            .join("");
+          const expiry = p.expiry_date ? esc(p.expiry_date) : '<span class="muted">—</span>';
           return `
           <tr>
-            <td><div class="strong">${esc(p.option ? p.option.underlying : p.symbol)}</div>
-                <div class="small muted">${esc(p.name)}</div></td>
-            <td><div>${esc(acct?.broker_name ?? p.broker_id)}</div>
-                <div class="small muted">${esc(acct?.account.name ?? p.account_id)}</div></td>
-            <td><span class="tag">${esc(p.asset_class)}</span></td>
-            <td class="num">${qty(p.quantity)}${p.multiplier !== 1 ? `<span class="muted small"> ×${p.multiplier}</span>` : ""}</td>
-            <td class="num">${money(p.average_cost, p.currency)}</td>
-            <td class="num">${money(p.market_price, p.currency)}</td>
-            <td class="num"><div class="strong">${money(p.market_value_base, ccy)}</div>
-                ${p.currency !== ccy ? `<div class="small muted">${money(p.market_value, p.currency)}</div>` : ""}</td>
-            <td class="num ${pnlClass(p.unrealized_pnl_base)}">
-                <div>${signedMoney(p.unrealized_pnl_base, ccy)}</div>
-                <div class="small">${pct(p.unrealized_pnl_pct, { signed: true })}</div></td>
-            <td class="num">${pct(p.weight)}</td>
-            <td>${dots}</td>
+            <td>
+              <div class="instrument-name">${esc(p.instrument)}</div>
+            </td>
+            <td>
+              <span class="symbol-code">${esc(p.symbol)}</span>
+            </td>
+            <td>
+              <span class="account-tag">${esc(p.account_alias)}</span>
+            </td>
+            <td>${expiry}</td>
+            <td class="num font-mono">${formatQty(p.position)}</td>
+            <td class="num font-mono">${formatMoney(p.average_price, ccy)}</td>
+            <td class="num font-mono">${formatMoney(p.mark_price, ccy)}</td>
+            <td class="num"><span class="currency-badge">${esc(p.currency)}</span></td>
+            <td class="num font-mono strong">${formatMoney(p.market_value, ccy)}</td>
+            <td class="num font-mono ${pnlClass(p.unrealised_pnl)}">
+              <div>${formatSignedMoney(p.unrealised_pnl, ccy)}</div>
+              <div class="small-pct">${formatPct(p.unrealised_pnl_pct, { signed: true })}</div>
+            </td>
           </tr>`;
         })
         .join("")
-    : `<tr><td colspan="10" class="empty muted">No positions match the current filters.</td></tr>`;
-}
-
-/** A small horizontal bar for weights (0..1). */
-function bar(fraction, color) {
-  const w = Math.max(0, Math.min(1, fraction)) * 100;
-  const style = color ? `width:${w}%;background:${color}` : `width:${w}%`;
-  return `<div class="bar"><div class="bar-fill" style="${esc(style)}"></div></div>`;
+    : `<tr><td colspan="10" class="empty muted">No positions match the current account or search filter.</td></tr>`;
 }
 
 // ---------------------------------------------------------------------------------------
-// Event wiring
+// Event Wiring
 // ---------------------------------------------------------------------------------------
 
-function wire() {
+function wireEvents() {
   $("#refresh-btn").addEventListener("click", load);
 
-  for (const tab of document.querySelectorAll("#allocation-tabs .tab")) {
-    tab.addEventListener("click", () => {
-      state.allocationKey = tab.dataset.key;
-      for (const t of document.querySelectorAll("#allocation-tabs .tab")) {
-        t.classList.toggle("active", t === tab);
-      }
-      if (state.summary) renderAllocation(state.summary);
-    });
-  }
+  $("#currency-select").addEventListener("change", (e) => {
+    state.currency = e.target.value;
+    render();
+  });
 
   $("#search").addEventListener("input", (e) => {
     state.search = e.target.value;
-    if (state.summary) renderPositions(state.summary);
-  });
-
-  $("#account-filter").addEventListener("change", (e) => {
-    state.accountFilter = e.target.value;
-    render();
+    renderPositions();
   });
 
   for (const th of document.querySelectorAll("#positions-table th[data-sort]")) {
     th.addEventListener("click", () => {
       const key = th.dataset.sort;
       state.sort = state.sort.key === key ? { key, dir: -state.sort.dir } : { key, dir: -1 };
-      if (state.summary) renderPositions(state.summary);
+      renderPositions();
     });
   }
 }
 
-wire();
+wireEvents();
 load();

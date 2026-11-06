@@ -118,11 +118,9 @@ Interactive docs: <http://127.0.0.1:8000/docs> (while the backend is running).
 | Method | Path | Returns |
 |---|---|---|
 | GET | `/health` | Liveness check |
-| GET | `/api/v1/portfolio` | **Everything for the dashboard:** totals, accounts, allocations (asset class / currency / symbol / group), positions, broker errors |
-| GET | `/api/v1/brokers` | Connected brokers |
-| GET | `/api/v1/accounts` | Accounts across all brokers |
-| GET | `/api/v1/groups` | User-defined position groups |
-| GET | `/api/v1/positions?account_id=&group_id=` | Positions in base currency, optionally filtered |
+| GET | `/api/v1/brokers` | Connected brokers (`ibkr-hk`, `futubull-hk`) |
+| GET | `/api/v1/accounts/{broker_id}` | Accounts metadata under broker (e.g. `IBKR-HK(0728)`, `Futubull-HK(7283)`) |
+| GET | `/api/v1/positions/{broker_id}?account_id=` | Broker positions (stocks, ETFs, futures, options, futures options) |
 
 ## Common tasks
 
