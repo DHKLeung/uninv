@@ -82,6 +82,10 @@ def test_positions_ibkr_endpoint(client: TestClient) -> None:
         assert "currency" in p
         assert "expiry_date" in p
         assert p["currency"] == "USD"
+        # Ensure derived metrics are not returned by the backend API
+        assert "market_value" not in p
+        assert "cost_basis" not in p
+        assert "unrealised_pnl" not in p
 
     # Verify options & futures options have expiry_date
     aapl_opt = next(p for p in positions if p["symbol"] == "AAPL 261218C00240000")

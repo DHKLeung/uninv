@@ -52,10 +52,22 @@ async function load() {
     const positionPromises = brokers.map((b) => apiGet(`/api/v1/positions/${b.id}`));
     const positionsNested = await Promise.all(positionPromises);
 
-    state.positions = positionsNested.flat().map((p) => ({
-      ...p,
-      account_alias: accountAliasMap[p.account_id] ?? p.account_id,
-    }));
+    state.positions = positionsNested.flat().map((p) => {
+      const mult = p.multiplier ?? 1.0;
+      const marketValue = p.position * p.mark_price * mult;
+      const costBasis = p.position * p.average_price * mult;
+      const unrealisedPnl = marketValue - costBasis;
+      const unrealisedPnlPct = costBasis !== 0 ? unrealisedPnl / Math.abs(costBasis) : 0;
+      return {
+        ...p,
+        account_alias: accountAliasMap[p.account_id] ?? p.account_id,
+        multiplier: mult,
+        market_value: marketValue,
+        cost_basis: costBasis,
+        unrealised_pnl: unrealisedPnl,
+        unrealised_pnl_pct: unrealisedPnlPct,
+      };
+    });
 
     state.lastUpdated = new Date();
     setBackendStatus(true);

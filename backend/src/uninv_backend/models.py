@@ -3,7 +3,7 @@
 Professional Pydantic v2 data models for brokers, accounts, and positions.
 """
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field
 
 
 class Broker(BaseModel):
@@ -22,16 +22,10 @@ class AccountMetadata(BaseModel):
 
 
 class Position(BaseModel):
-    """Holding position as reported by a broker.
+    """Raw holding position as reported by a broker.
 
-    Required fields:
-      - instrument
-      - symbol
-      - position (quantity)
-      - average_price
-      - mark_price
-      - currency
-      - expiry_date (for options and futures)
+    Derived metrics such as market value, cost basis, and unrealised P&L
+    are calculated on the client side.
     """
 
     account_id: str
@@ -44,25 +38,3 @@ class Position(BaseModel):
     currency: str = "USD"
     expiry_date: str | None = None
     multiplier: float = 1.0
-
-    @computed_field
-    @property
-    def market_value(self) -> float:
-        return round(self.position * self.mark_price * self.multiplier, 2)
-
-    @computed_field
-    @property
-    def cost_basis(self) -> float:
-        return round(self.position * self.average_price * self.multiplier, 2)
-
-    @computed_field
-    @property
-    def unrealised_pnl(self) -> float:
-        return round(self.market_value - self.cost_basis, 2)
-
-    @computed_field
-    @property
-    def unrealised_pnl_pct(self) -> float:
-        if abs(self.cost_basis) < 1e-6:
-            return 0.0
-        return round(self.unrealised_pnl / abs(self.cost_basis), 4)

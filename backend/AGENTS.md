@@ -15,6 +15,7 @@ Rules for `backend/`. Root `AGENTS.md` applies too.
 ## Conventions
 - Python 3.13, full type hints, `X | None`. Ruff: line length 100.
 - `Position` required fields: `instrument`, `symbol`, `position`, `average_price`, `mark_price`, `currency`, and `expiry_date`.
+- Derived figures (market value, cost basis, unrealised P&L) are computed client-side, keeping backend raw and thin.
 - Multipliers: Options = 100, ES futures / futures options = 50, NQ futures = 20, equities = 1.
 - All values currently in USD; FX conversion handled via active display currency (USD / GBP).
 - Dependencies: `uv add <pkg>` / `uv add --dev <pkg>`; commit `uv.lock`.

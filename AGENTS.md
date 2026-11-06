@@ -14,7 +14,7 @@ strategy builder, live prices, etc. (roadmap in `README.md`).
 
 - `backend/`: Python 3.13 + FastAPI, managed with **uv**. All business logic: broker
   accounts metadata and positions. → see `backend/AGENTS.md`
-- `desktop/`: **Tauri 2** app (16:9 1920x1080). `src/` = plain HTML/CSS/JS UI (no Node, no bundler);
+- `desktop/`: **Tauri 2** app (16:9 1600x900 default). `src/` = plain HTML/CSS/JS UI (no Node, no bundler);
   `src-tauri/` = thin Rust shell. → see `desktop/AGENTS.md`
 - `docs/architecture.md`: design decisions and the reasons for them. Update it when a decision
   changes.
@@ -97,11 +97,11 @@ _Last updated: 2026-11-06_
 - ✅ Backend rewritten to streamlined Pydantic v2 architecture:
   - Brokers: `Interactive Brokers (Hong Kong)` (`ibkr-hk`) and `Futubull (Hong Kong)` (`futubull-hk`).
   - Accounts metadata: `IBKR-HK(0728)`, `Futubull-HK(7283)`, `Futubull-HK(7612)`, `Futubull-HK(0281)`.
-  - Positions: mock data across stocks, ETFs, futures, options, and futures options (all in USD).
+  - Positions: mock data across stocks, ETFs, futures, options, futures options, and Bitcoin (all in USD). Raw broker fields only; derived metrics (market value, cost basis, unrealised P&L) computed in frontend.
   - Clean endpoints: `GET /api/v1/brokers`, `GET /api/v1/accounts/{broker_id}`, `GET /api/v1/positions/{broker_id}`.
   - All 10 backend tests pass, Ruff check passes.
 - ✅ GUI Application updated:
-  - Configured for 16:9 1920×1080 display layout (`tauri.conf.json` and responsive CSS).
+  - Configured for 16:9 1600×900 default display layout (`tauri.conf.json` and responsive CSS).
   - Navigation tab header with `Portfolio` active tab.
   - British English KPI cards: `NET LIQUIDATION VALUE`, `POSITIONS VALUE`, `CASH BALANCE`, `UNREALISED P&L` (with % and no "on cost").
   - Top right: As-of timestamp, currency selector (USD `$` and GBP `£` at 0.7487 FX rate), refresh button.
