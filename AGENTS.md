@@ -99,7 +99,7 @@ _Last updated: 2026-11-06_
 - ✅ Dashboard UI working in browser mode (KPIs, accounts, allocation tabs, group chips,
   sortable positions table).
 - ✅ **Rust/Tauri desktop shell compiled successfully:** Native executable (`uninv-desktop.exe`)
-  built with MSVC C++ Build Tools.
+  built with MSVC C++ Build Tools. `tauri-cli 2.12.4` installed globally.
 - ✅ **Cross-platform targets & CI:** Automated GitHub Actions matrix across `ubuntu-latest`,
   `macos-latest`, and `windows-latest` for both Python backend and Tauri Rust shell. Pure-Rust
   `rustls` TLS configured for cross-platform HTTPS.
