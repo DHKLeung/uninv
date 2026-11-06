@@ -59,7 +59,9 @@ uninv/
 │   ├── src-tauri/              # Rust: Cargo.toml, tauri.conf.json, src/lib.rs
 │   └── app-icon.png            # source image for app icons
 ├── docs/                       # design notes
-└── scripts/dev.ps1             # run everything in dev mode
+├── scripts/dev.ps1             # run everything in dev mode
+└── AGENTS.md                   # instructions + project status for AI coding agents
+                                # (nested ones in backend/ and desktop/)
 ```
 
 ## Prerequisites (Windows)
