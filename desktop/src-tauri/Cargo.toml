@@ -18,6 +18,5 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# HTTP client used to call the local Python backend. TLS is not needed for 127.0.0.1;
-# real broker connections live in Python.
-reqwest = { version = "0.13", default-features = false, features = ["json"] }
+# HTTP client used to call the Python backend (HTTP for local sidecar; rustls for HTTPS on Linux/macOS/iOS/Windows).
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
