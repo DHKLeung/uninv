@@ -29,6 +29,7 @@ FastAPI → `PortfolioService` → `BrokerConnector`s.
 **Cross-platform: Windows, macOS, Linux, and iOS (iPhone).**
 - **Desktop (Windows/macOS/Linux):** Tauri 2 desktop shell; Python backend runs locally (sidecar).
 - **Mobile (iOS):** Tauri 2 mobile client connecting to the backend over LAN or HTTPS (iOS sandbox prevents background daemon subprocesses).
+- **CI Matrix:** Automated via GitHub Actions (`.github/workflows/ci.yml`) across `ubuntu-latest`, `macos-latest`, and `windows-latest` for both Python backend (tests/lint) and Tauri Rust shell (`cargo check`).
 - **UI:** Must stay responsive, touch-friendly, and respect iOS safe-area insets.
 
 ## The user
