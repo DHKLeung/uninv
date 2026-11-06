@@ -63,10 +63,26 @@ supports that by setting `build.devUrl` / `beforeDevCommand` in `tauri.conf.json
 
 ## 7. Process model (current → planned)
 
-- **Now (dev):** backend and desktop app run as two processes (`scripts/dev.ps1` starts both).
-- **Planned (release):** package the backend with PyInstaller as a Tauri
+- **Now (dev):** backend and desktop app run as two processes (`scripts/dev.ps1` on Windows,
+  `scripts/dev.sh` on macOS/Linux).
+- **Planned (release - Desktop):** package the backend with PyInstaller as a Tauri
   [sidecar](https://v2.tauri.app/develop/sidecar/). Tauri starts it on launch, picks a free
-  port and stops it on exit, so the user gets a single installer.
+  port and stops it on exit, so desktop users get a single installer.
+
+## 8. Cross-Platform Strategy: Desktop (Windows, macOS, Linux) & Mobile (iOS / iPhone)
+
+uninv is designed for cross-platform deployment:
+
+### Desktop (Windows, macOS, Linux)
+- Tauri 2 provides the native desktop shell on Windows (WebView2), macOS (WebKit), and Linux (WebKitGTK).
+- The Python backend runs locally alongside the desktop app.
+- Both PowerShell (`scripts/dev.ps1`) and Bash/Zsh (`scripts/dev.sh`) runners are supported.
+
+### Mobile (iOS / iPhone)
+- **iOS Sandbox Model:** Apple does not allow spawning external background daemon processes (sidecars) or running arbitrary local shell processes inside iOS apps.
+- **Client-to-Host Architecture:** The Tauri 2 iOS app acts as a client connecting over the network (LAN or HTTPS) to the Python backend running on the user's desktop, home server, or cloud host.
+- **Dynamic Connection:** Both the Rust shell (`set_backend_url`) and JavaScript client (`setBackendUrl`) allow setting the target host address so an iPhone can connect to any host on the network.
+- **Mobile-Responsive UI:** Viewport includes `viewport-fit=cover` and CSS handles iOS safe areas (`env(safe-area-inset-top)`, `env(safe-area-inset-bottom)`) with responsive single-column layouts for phone screens.
 
 ## Repo evolution guideline
 

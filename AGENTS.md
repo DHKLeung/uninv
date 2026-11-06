@@ -19,9 +19,17 @@ strategy builder, live prices, etc. (roadmap in `README.md`).
 - `docs/architecture.md`: design decisions and the reasons for them. Update it when a decision
   changes.
 - `scripts/dev.ps1`: runs backend + desktop app (`-Browser` for UI in a browser, no Rust).
+- `scripts/dev.sh`: macOS/Linux equivalent for bash/zsh.
 
-Data flow: UI → `invoke("api_get", {path})` → Rust proxy → `http://127.0.0.1:8000/api/v1/...` →
+Data flow: UI → `invoke("api_get", {path})` → Rust proxy → `http://<host>:8000/api/v1/...` →
 FastAPI → `PortfolioService` → `BrokerConnector`s.
+
+## Target platforms
+
+**Cross-platform: Windows, macOS, Linux, and iOS (iPhone).**
+- **Desktop (Windows/macOS/Linux):** Tauri 2 desktop shell; Python backend runs locally (sidecar).
+- **Mobile (iOS):** Tauri 2 mobile client connecting to the backend over LAN or HTTPS (iOS sandbox prevents background daemon subprocesses).
+- **UI:** Must stay responsive, touch-friendly, and respect iOS safe-area insets.
 
 ## The user
 

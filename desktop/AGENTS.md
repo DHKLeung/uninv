@@ -13,13 +13,17 @@ any Rust change in plain terms.
   - `js/main.js`: loads `/api/v1/portfolio` once, keeps `state`, and renders. Filtering and
     sorting happen in the browser.
 - `src-tauri/`: Rust shell.
-  - `src/lib.rs`: `Backend` state (reqwest client and base URL from `UNINV_BACKEND_URL`);
-    commands `api_get` (generic GET proxy, only `/api/*` and `/health` allowed) and
-    `backend_url`.
+  - `src/lib.rs`: `Backend` state (reqwest client and base URL from `UNINV_BACKEND_URL` / `RwLock`);
+    commands `api_get` (generic GET proxy, only `/api/*` and `/health` allowed), `backend_url`,
+    and `set_backend_url` (allows mobile client or remote UI to point to any host).
   - `tauri.conf.json`: window, CSP, bundle and icons. `capabilities/default.json`:
     `core:default` only.
   - `icons/` were generated from `../app-icon.png`; regenerate with
     `cargo tauri icon ../app-icon.png`.
+
+## Cross-platform & Mobile (iOS)
+- Mobile UI: Use `viewport-fit=cover` and CSS safe areas (`env(safe-area-inset-top)` / `env(safe-area-inset-bottom)`).
+- On iOS, Tauri runs as a client connecting to a remote/LAN host since the iOS sandbox forbids daemon subprocesses.
 
 ## Conventions
 - Tauri **2.x** only (`tauri = "2"`). Tauri 3 is in alpha; don't upgrade.

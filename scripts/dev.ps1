@@ -40,7 +40,14 @@ try {
 finally {
     Write-Host "Stopping ..." -ForegroundColor Cyan
     foreach ($p in @($backend, $frontend)) {
-        # /T kills the whole process tree (uv -> python -> uvicorn reloader workers).
-        if ($p -and -not $p.HasExited) { taskkill /PID $p.Id /T /F *> $null }
+        if ($p -and -not $p.HasExited) {
+            # On Windows, taskkill /T kills child processes (uv -> python worker).
+            # On macOS/Linux (pwsh), use Stop-Process.
+            if ($IsWindows -or ($null -eq $IsWindows -and $env:OS -match 'Windows')) {
+                taskkill /PID $p.Id /T /F *> $null
+            } else {
+                Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
 }

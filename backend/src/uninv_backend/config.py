@@ -18,10 +18,9 @@ class Settings(BaseSettings):
     # Currency that every portfolio total is converted into.
     base_currency: str = "USD"
 
-    # Browser origins allowed to call the API directly. The Tauri app does not need this
-    # (its requests go through Rust), but it lets you open the frontend in a normal browser
-    # (served on port 1420) while iterating on the UI.
-    cors_origins: list[str] = ["http://localhost:1420", "http://127.0.0.1:1420"]
+    # Browser origins allowed to call the API directly. Defaults to allowing all
+    # origins during development so mobile devices and web browsers on LAN can connect.
+    cors_origins: list[str] = ["*"]
 
 
 @lru_cache
