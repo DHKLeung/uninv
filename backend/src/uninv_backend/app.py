@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 from uninv_backend import __version__
 from uninv_backend.api.routes import router
@@ -21,6 +22,11 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.get("/", include_in_schema=False)
+    async def root() -> RedirectResponse:
+        """Redirect bare root URL directly to the OpenAPI docs."""
+        return RedirectResponse(url="/docs")
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict[str, str]:
