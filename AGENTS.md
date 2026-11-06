@@ -89,15 +89,12 @@ _Last updated: 2026-11-06_
   and friends. 10 tests pass.
 - ✅ Dashboard UI working in browser mode (KPIs, accounts, allocation tabs, group chips,
   sortable positions table).
-- ⚠️ **Rust/Tauri app has never been compiled.** The MSVC C++ Build Tools install failed (winget
-  exit 1602, UAC cancelled). The user must install them; then run `cargo tauri dev` /
-  `cargo run` in `desktop/src-tauri`, fix any compile errors, and commit `Cargo.lock`.
+- ⚠️ **Rust/Tauri app has never been compiled.** `Cargo.lock` has been resolved and committed. The MSVC C++ Build Tools install requires UAC elevation on Windows (winget exit 1602 when run non-interactively). The user should run the installer with admin approval; then `cargo tauri dev` or `cargo run` can compile the desktop shell.
   Tauri CLI not installed yet (`cargo install tauri-cli --version "^2" --locked`).
-- ⏳ Commit `Scaffold uninv…` not yet pushed. Push after the Tauri build is verified (or
-  sooner if the user asks).
+- ⏳ Ready to push commits to `origin master`.
 
 ### Next steps
-1. Verify the Tauri build, commit `Cargo.lock`, push.
+1. Install MSVC C++ Build Tools, run Tauri app, verify desktop build.
 2. Persist groups/settings (SQLite) + group editing UI.
 3. First real broker connector (ask the user which broker first).
 4. Bundle the backend as a PyInstaller sidecar so Tauri starts it.
