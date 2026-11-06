@@ -102,6 +102,19 @@ POSITIONS: dict[str, list[Position]] = {
             expiry_date="2026-12-18",
             multiplier=50.0,
         ),
+        # Crypto: Bitcoin
+        Position(
+            account_id="U16110728",
+            broker_id="ibkr-hk",
+            instrument="Bitcoin",
+            symbol="BTC",
+            position=1.25,
+            average_price=68500.00,
+            mark_price=71200.00,
+            currency="USD",
+            expiry_date=None,
+            multiplier=1.0,
+        ),
     ],
     "futubull-hk": [
         # Account 1: 1001279250287283 -> Futubull-HK(7283)
@@ -223,6 +236,19 @@ POSITIONS: dict[str, list[Position]] = {
             currency="USD",
             expiry_date="2026-12-18",
             multiplier=100.0,
+        ),
+        # Crypto: Bitcoin
+        Position(
+            account_id="1001272756530281",
+            broker_id="futubull-hk",
+            instrument="Bitcoin",
+            symbol="BTC",
+            position=0.5,
+            average_price=65200.00,
+            mark_price=71200.00,
+            currency="USD",
+            expiry_date=None,
+            multiplier=1.0,
         ),
     ],
 }

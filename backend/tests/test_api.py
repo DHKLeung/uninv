@@ -70,7 +70,7 @@ def test_positions_ibkr_endpoint(client: TestClient) -> None:
     resp = client.get("/api/v1/positions/ibkr-hk")
     assert resp.status_code == 200
     positions = resp.json()
-    assert len(positions) == 5
+    assert len(positions) == 6
 
     # Check required fields exist on every position
     for p in positions:
@@ -92,12 +92,18 @@ def test_positions_ibkr_endpoint(client: TestClient) -> None:
     aapl_stock = next(p for p in positions if p["symbol"] == "AAPL")
     assert aapl_stock["expiry_date"] is None
 
+    # Verify Bitcoin position is present
+    btc = next(p for p in positions if p["symbol"] == "BTC")
+    assert btc["instrument"] == "Bitcoin"
+    assert btc["position"] == 1.25
+    assert btc["expiry_date"] is None
+
 
 def test_positions_futubull_endpoint(client: TestClient) -> None:
     resp = client.get("/api/v1/positions/futubull-hk")
     assert resp.status_code == 200
     positions = resp.json()
-    assert len(positions) == 9
+    assert len(positions) == 10
 
     # Filter by specific account
     acct_id = "1001279250287283"
