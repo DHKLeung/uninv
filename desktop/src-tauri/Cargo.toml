@@ -1,0 +1,23 @@
+[package]
+name = "uninv-desktop"
+version = "0.1.0"
+description = "uninv: unified investing platform (desktop app)"
+authors = ["DHKLeung"]
+edition = "2021"
+
+# The app logic lives in a library (src/lib.rs); src/main.rs just calls it.
+# This is the standard Tauri 2 layout (it also enables mobile targets later).
+[lib]
+name = "uninv_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# HTTP client used to call the local Python backend. TLS is not needed for 127.0.0.1;
+# real broker connections live in Python.
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
