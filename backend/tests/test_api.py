@@ -161,7 +161,7 @@ def test_positions_futubull_endpoint(client: TestClient) -> None:
 
     # Verify money market fund without units / prices
     mmf = next(p for p in positions if p["symbol"] == "HK0000923844")
-    assert mmf["instrument"] == "GaoTeng USD Money Market Fund"
+    assert mmf["instrument"] == "ChinaAMC Select USD Money Market Fund"
     assert mmf["position"] is None
     assert mmf["average_price"] is None
     assert mmf["mark_price"] is None

@@ -299,7 +299,7 @@ POSITIONS: dict[str, list[Position]] = {
         Position(
             account_id="1001279250287283",
             broker_id="futubull-hk",
-            instrument="GaoTeng USD Money Market Fund",
+            instrument="ChinaAMC Select USD Money Market Fund",
             symbol="HK0000923844",
             position=None,
             average_price=None,

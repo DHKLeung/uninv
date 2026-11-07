@@ -123,6 +123,7 @@ function render() {
   renderAccounts();
   renderFilterPills();
   renderPositions();
+  renderCashBalances();
 }
 
 function renderHeader() {
@@ -181,6 +182,8 @@ function renderAccounts() {
       const acctPnlUsd = acctPositions.reduce((acc, p) => acc + (p.unrealised_pnl ?? 0), 0);
       const acctCostBasis = acctPositions.reduce((acc, p) => acc + (p.cost_basis ?? 0), 0);
       const acctPnlPct = acctCostBasis !== 0 ? acctPnlUsd / Math.abs(acctCostBasis) : 0;
+      const acctCashUsd = state.cashBalances[acct.account_id] ?? 0.0;
+      const acctNetLiqUsd = acctValUsd + acctCashUsd;
       const isSelected = state.selectedAccount === acct.account_id;
 
       return `
@@ -190,14 +193,22 @@ function renderAccounts() {
           <div class="account-badge">${esc(acct.broker_name)}</div>
         </div>
         <div class="account-number muted">${esc(acct.account_id)} · ${acctPositions.length} positions</div>
-        <div class="account-metrics">
+        <div class="account-metrics-grid">
           <div>
-            <div class="metric-label">Market Value</div>
-            <div class="metric-value">${formatMoney(acctValUsd, ccy)}</div>
+            <div class="metric-label">NET LIQUIDATION VALUE</div>
+            <div class="metric-value font-mono">${formatMoney(acctNetLiqUsd, ccy)}</div>
           </div>
           <div class="text-right">
-            <div class="metric-label">Unrealised P&amp;L</div>
-            <div class="metric-value ${pnlClass(acctPnlUsd)}">
+            <div class="metric-label">POSITION VALUE</div>
+            <div class="metric-value font-mono">${formatMoney(acctValUsd, ccy)}</div>
+          </div>
+          <div>
+            <div class="metric-label">CASH BALANCE</div>
+            <div class="metric-value font-mono ${pnlClass(acctCashUsd)}">${formatMoney(acctCashUsd, ccy)}</div>
+          </div>
+          <div class="text-right">
+            <div class="metric-label">UNREALISED P&amp;L</div>
+            <div class="metric-value font-mono ${pnlClass(acctPnlUsd)}">
               ${formatSignedMoney(acctPnlUsd, ccy)}
               <span class="metric-pct">(${formatPct(acctPnlPct, { signed: true })})</span>
             </div>
@@ -215,6 +226,7 @@ function renderAccounts() {
       renderAccounts();
       renderKpis();
       renderPositions();
+      renderCashBalances();
     });
   }
 }
@@ -244,8 +256,52 @@ function renderFilterPills() {
       renderAccounts();
       renderKpis();
       renderPositions();
+      renderCashBalances();
     });
   }
+}
+
+function renderCashBalances() {
+  const ccy = state.currency;
+  const filteredAccounts = !state.selectedAccount
+    ? state.accounts
+    : state.accounts.filter((a) => a.account_id === state.selectedAccount);
+
+  const totalCashUsd = filteredAccounts.reduce(
+    (acc, a) => acc + (state.cashBalances[a.account_id] ?? 0.0),
+    0
+  );
+
+  $("#cash-balances-caption").textContent = `${filteredAccounts.length} ${
+    filteredAccounts.length === 1 ? "account" : "accounts"
+  } · ${formatMoney(totalCashUsd, ccy)} total cash`;
+
+  const tbody = $("#cash-table tbody");
+  tbody.innerHTML = filteredAccounts.length
+    ? filteredAccounts
+        .map((a) => {
+          const cashUsd = state.cashBalances[a.account_id] ?? 0.0;
+          return `
+          <tr>
+            <td>
+              <span class="account-tag">${esc(a.alias)}</span>
+            </td>
+            <td>
+              <span class="broker-name">${esc(a.broker_name)}</span>
+            </td>
+            <td>
+              <span class="font-mono text-muted">${esc(a.account_id)}</span>
+            </td>
+            <td class="num">
+              <span class="currency-badge">USD</span>
+            </td>
+            <td class="num font-mono strong ${pnlClass(cashUsd)}">
+              ${formatMoney(cashUsd, ccy)}
+            </td>
+          </tr>`;
+        })
+        .join("")
+    : `<tr><td colspan="5" class="empty muted">No cash accounts match the current filter.</td></tr>`;
 }
 
 function renderPositions() {

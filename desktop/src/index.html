@@ -46,7 +46,7 @@
           <div class="kpi-value" id="kpi-netliq">–</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">MARKET VALUE</div>
+          <div class="kpi-label">POSITION VALUE</div>
           <div class="kpi-value" id="kpi-positions">–</div>
         </div>
         <div class="kpi-card">
@@ -71,39 +71,73 @@
         <div id="accounts-grid" class="accounts-grid"></div>
       </section>
 
-      <!-- Positions Section -->
-      <section class="panel positions-panel">
-        <div class="panel-header positions-header">
+      <!-- Holdings & Balances Section (Positions & Cash Balances) -->
+      <section class="panel holdings-panel">
+        <div class="panel-header holdings-header">
           <div class="positions-filter-bar">
-            <!-- Account filter buttons (All, IBKR-HK(0728), Futubull-HK(7283)...) -->
+            <!-- Account filter buttons (All, IBKR-HK (0728), Futubull-HK (7283)...) -->
             <div id="account-filter-pills" class="filter-pills"></div>
-          </div>
-          <div class="positions-search-bar">
-            <input id="search" type="search" placeholder="Search symbol or instrument…" />
-            <span class="positions-count-badge" id="positions-count"></span>
           </div>
         </div>
 
-        <div class="table-wrap">
-          <table id="positions-table">
-            <thead>
-              <tr>
-                <th data-sort="instrument">Instrument</th>
-                <th data-sort="symbol">Symbol</th>
-                <th data-sort="account_alias">Account</th>
-                <th data-sort="expiry_date">Expiry Date</th>
-                <th data-sort="delivery_date">Delivery Date</th>
-                <th data-sort="position" class="num">Position</th>
-                <th data-sort="average_price" class="num">Avg Price</th>
-                <th data-sort="cost_basis" class="num">Cost Basis</th>
-                <th data-sort="mark_price" class="num">Mark Price</th>
-                <th data-sort="market_value" class="num">Market Value</th>
-                <th data-sort="currency" class="num">Currency</th>
-                <th data-sort="unrealised_pnl" class="num">Unrealised P&amp;L</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
+        <!-- Subsection 1: Positions -->
+        <div class="subsection positions-subsection">
+          <div class="subsection-header">
+            <div class="subsection-title-group">
+              <h3>Positions</h3>
+              <span class="positions-count-badge" id="positions-count"></span>
+            </div>
+            <div class="positions-search-bar">
+              <input id="search" type="search" placeholder="Search symbol or instrument…" />
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table id="positions-table">
+              <thead>
+                <tr>
+                  <th data-sort="instrument">Instrument</th>
+                  <th data-sort="symbol">Symbol</th>
+                  <th data-sort="account_alias">Account</th>
+                  <th data-sort="expiry_date">Expiry Date</th>
+                  <th data-sort="delivery_date">Delivery Date</th>
+                  <th data-sort="position" class="num">Position</th>
+                  <th data-sort="average_price" class="num">Avg Price</th>
+                  <th data-sort="cost_basis" class="num">Cost Basis</th>
+                  <th data-sort="mark_price" class="num">Mark Price</th>
+                  <th data-sort="market_value" class="num">Market Value</th>
+                  <th data-sort="currency" class="num">Currency</th>
+                  <th data-sort="unrealised_pnl" class="num">Unrealised P&amp;L</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Subsection 2: Cash Balances -->
+        <div class="subsection cash-balances-subsection">
+          <div class="subsection-header">
+            <div class="subsection-title-group">
+              <h3>Cash Balances</h3>
+              <span class="muted" id="cash-balances-caption"></span>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table id="cash-table">
+              <thead>
+                <tr>
+                  <th>Account</th>
+                  <th>Broker</th>
+                  <th>Account Number</th>
+                  <th class="num">Currency</th>
+                  <th class="num">Cash Balance</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
       </section>
     </main>

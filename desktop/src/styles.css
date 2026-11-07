@@ -341,29 +341,31 @@ h2 {
   margin-bottom: 12px;
 }
 
-.account-metrics {
-  display: flex;
-  justify-content: space-between;
+.account-metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   padding-top: 10px;
 }
 
 .metric-label {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  font-weight: 600;
 }
 
 .metric-value {
   font-weight: 650;
-  font-size: 14px;
+  font-size: 13.5px;
   margin-top: 2px;
   font-variant-numeric: tabular-nums;
 }
 
 .metric-pct {
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
 }
 
@@ -371,13 +373,51 @@ h2 {
   text-align: right;
 }
 
-/* Positions Panel & Filters ------------------------------------------------ */
-.positions-header {
+/* Holdings & Balances (Positions & Cash Balances) --------------------------- */
+.holdings-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 12px;
+}
+
+/* Subsections inside unified panel */
+.subsection {
+  margin-top: 8px;
+}
+
+.cash-balances-subsection {
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+  margin-top: 24px;
+}
+
+.subsection-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin-bottom: 12px;
   gap: 16px;
   flex-wrap: wrap;
+}
+
+.subsection-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.subsection-title-group h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.broker-name {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .positions-filter-bar {
@@ -586,7 +626,7 @@ td.empty {
   .topbar { flex-direction: column; align-items: flex-start; gap: 12px; }
   .topbar-left { flex-direction: column; align-items: flex-start; gap: 12px; }
   .topbar-right { width: 100%; justify-content: space-between; }
-  .positions-header { flex-direction: column; align-items: flex-start; }
+  .positions-header, .holdings-header, .subsection-header { flex-direction: column; align-items: flex-start; }
   .positions-search-bar { width: 100%; }
   .positions-search-bar input { width: 100%; }
 }
