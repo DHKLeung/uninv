@@ -38,17 +38,23 @@ try {
     $gwLive = (Get-NetTCPConnection -LocalPort 4001 -ErrorAction SilentlyContinue) -ne $null
     $gwPaper = (Get-NetTCPConnection -LocalPort 4002 -ErrorAction SilentlyContinue) -ne $null
 
-    if ($twsLive) {
-        Write-Host "[IBKR] TWS Live API detected on port 7496" -ForegroundColor Green
-    } elseif ($twsPaper) {
-        Write-Host "[IBKR] TWS Paper API detected on port 7497" -ForegroundColor Green
-    } elseif ($gwLive) {
+    if ($gwLive) {
         Write-Host "[IBKR] IB Gateway Live detected on port 4001" -ForegroundColor Green
     } elseif ($gwPaper) {
         Write-Host "[IBKR] IB Gateway Paper detected on port 4002" -ForegroundColor Green
+    } elseif ($twsLive) {
+        Write-Host "[IBKR] TWS Live API detected on port 7496" -ForegroundColor Green
+    } elseif ($twsPaper) {
+        Write-Host "[IBKR] TWS Paper API detected on port 7497" -ForegroundColor Green
     } else {
-        Write-Host "[IBKR] Notice: TWS / IB Gateway not detected on 7496/7497/4001/4002." -ForegroundColor Yellow
-        Write-Host "       (Make sure TWS is running with 'Enable ActiveX and Socket Clients' enabled)" -ForegroundColor Yellow
+        Write-Host "[IBKR] Notice: IB Gateway / TWS not detected on 4001/4002/7496/7497." -ForegroundColor Yellow
+        Write-Host "       (Make sure IB Gateway or TWS is running with 'Enable ActiveX and Socket Clients' enabled)" -ForegroundColor Yellow
+    }
+
+    # Check Futubull OpenD Status
+    $futuActive = (Get-NetTCPConnection -LocalPort 11111 -ErrorAction SilentlyContinue) -ne $null
+    if ($futuActive) {
+        Write-Host "[Futu] OpenD API detected on port 11111" -ForegroundColor Green
     }
 
     # ---------------------------------------------------------

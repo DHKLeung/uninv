@@ -16,10 +16,12 @@ strategy builder, live prices, etc. (roadmap in `README.md`).
   accounts metadata and positions. → see `backend/AGENTS.md`
 - `desktop/`: **Tauri 2** app (16:9 1600x900 default). `src/` = plain HTML/CSS/JS UI (no Node, no bundler);
   `src-tauri/` = thin Rust shell. → see `desktop/AGENTS.md`
+- `gateways/`: Documentation and setup guides for external broker daemons (`gateways/ib_gateway/instruction.md`). Broker gateways run standalone on the host OS.
 - `docs/architecture.md`: design decisions and the reasons for them. Update it when a decision
   changes.
-- `scripts/dev.ps1`: runs backend + desktop app (`-Browser` for browser UI, `-ServicesOnly` for headless backend).
+- `scripts/dev.ps1`: runs backend + desktop app on Windows (`-Browser` for browser UI, `-ServicesOnly` for headless backend).
 - `scripts/dev.cmd`: Windows cmd/PowerShell wrapper (one-click double-clickable launcher).
+- `scripts/dev.sh`: macOS/Linux equivalent for bash/zsh (`--browser`, `--services-only`).
 - `scripts/start-services.cmd`: one-click launcher for backend in headless mode.
 
 Data flow: UI → `invoke("api_get", {path})` → Rust proxy → `http://<host>:8000/api/v1/...` →
@@ -27,10 +29,10 @@ FastAPI.
 
 ## Target platforms
 
-**Windows Only (Windows 10 / 11 64-bit).**
-- **Desktop:** Tauri 2 desktop shell using Windows WebView2; Python backend runs locally (sidecar).
-- **Broker Interface:** TWS / IB Gateway runs locally on Windows (handles passkey 2FA).
-- **CI Matrix:** Automated via GitHub Actions (`.github/workflows/ci.yml`) on `windows-latest` for both Python backend (tests/lint) and Tauri Rust shell (`cargo check`).
+**Cross-platform: Windows, macOS, and Linux (Ubuntu).**
+- **Desktop:** Tauri 2 desktop shell using native webviews (WebView2 on Windows, WebKit on macOS, WebKitGTK on Linux); Python backend runs locally (sidecar).
+- **Broker Gateways:** Standalone daemons (IB Gateway on ports 4001/7496, Futu OpenD on port 11111) run natively on the host OS, handling passkey/2FA authentication independently. `uninv` connects locally via socket APIs (`ib_async`, `futu-api`).
+- **CI Matrix:** Automated via GitHub Actions (`.github/workflows/ci.yml`) on `windows-latest`, `macos-latest`, and `ubuntu-latest` for both Python backend (tests/lint) and Tauri Rust shell (`cargo check`).
 
 ## The user
 
@@ -111,11 +113,13 @@ _Last updated: 2026-11-07_
     2. Cash Balances: displays associated account, broker, account number, currency, and cash balance.
   - Removed obsolete simulated badge, allocation panels, and groups.
 - ✅ Rust shell compiles cleanly (`cargo check`).
-- ✅ Shifted to Windows-only architecture:
+- ✅ Shifted to Standalone Broker Daemon Architecture (Cross-Platform):
   - Client Portal Gateway abandoned due to IBKR passkey authentication limitations.
-  - Removed CP gateway files and macOS/Linux shell scripts.
-  - CI updated to Windows-only matrix (`windows-latest`).
-  - Next: Integrate IBKR via TWS / IB Gateway API (`ib_async`) on ports 7496/7497/4001/4002.
+  - Broker gateways (IB Gateway / TWS, Futu OpenD) run standalone on the host OS, supporting native passkeys and 2FA across Windows, macOS, and Linux.
+  - Added `gateways/ib_gateway/instruction.md` setup and configuration guide.
+  - Cross-platform CI matrix (`windows-latest`, `macos-latest`, `ubuntu-latest`) and runner scripts (`dev.ps1`, `dev.cmd`, `dev.sh`) enabled.
+  - Integrated `ib_async` into backend dependencies for high-performance asyncio socket communication.
+  - Next: Build live IBKR connector service in `backend/src/uninv_backend/` to query IB Gateway on port 4001/7496.
 
 ### Next steps
 1. Real broker connector integrations (IBKR / Futubull).

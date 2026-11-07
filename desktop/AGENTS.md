@@ -21,8 +21,8 @@ any Rust change in plain terms.
   - `icons/` were generated from `../app-icon.png`; regenerate with
     `cargo tauri icon ../app-icon.png`.
 
-## Platform
-- Windows only (Windows 10 / 11 64-bit). Uses Microsoft Edge WebView2.
+## Platforms
+- Cross-platform desktop: Windows (WebView2), macOS (WebKit), Linux (WebKitGTK).
 
 ## Conventions
 - Tauri **2.x** only (`tauri = "2"`). Tauri 3 is in alpha; don't upgrade.

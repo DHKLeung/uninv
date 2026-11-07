@@ -63,18 +63,19 @@ supports that by setting `build.devUrl` / `beforeDevCommand` in `tauri.conf.json
 
 ## 7. Process model (current → planned)
 
-- **Now (dev):** backend and desktop app run as two processes (`scripts/dev.ps1` on Windows).
+- **Now (dev):** backend and desktop app run as two processes (`scripts/dev.ps1` on Windows,
+  `scripts/dev.sh` on macOS/Linux).
 - **Planned (release - Desktop):** package the backend with PyInstaller as a Tauri
   [sidecar](https://v2.tauri.app/develop/sidecar/). Tauri starts it on launch, picks a free
   port and stops it on exit, so desktop users get a single installer.
 
-## 8. Target Platform: Windows Only (Windows 10 / 11 64-bit)
+## 8. Cross-Platform Target & Standalone Broker Architecture (Windows, macOS, Linux)
 
-uninv is dedicated to Windows:
+uninv supports **Windows, macOS, and Linux**:
 
-- **Broker Execution:** IBKR passkey authentication requires running official Interactive Brokers Trader Workstation (TWS) or IB Gateway locally on Windows. Socket connections (`ib_async`) interface directly with the local TWS instance on ports 7496/7497.
-- **Tauri 2 Desktop Shell:** Uses Microsoft Edge WebView2 on Windows for optimal native rendering and minimal memory footprint.
-- **Single OS Focus:** Keeps the build matrix, package management (uv), and local broker connectivity robust and simple without cross-platform overhead.
+- **Standalone Broker Daemons:** Broker gateways (such as **IB Gateway** from Interactive Brokers and **OpenD** from Futu) run as standalone applications on the host machine. This gives users full native support for modern biometric passkeys (Windows Hello, Apple Touch ID), hardware FIDO2 keys, and 2FA prompts during login.
+- **Socket Interfaces:** Once authenticated, gateways expose local TCP socket APIs (`127.0.0.1:4001` for IB Gateway, `127.0.0.1:11111` for Futu OpenD). The `uninv` Python backend connects asynchronously using `ib_async` and `futu-api`.
+- **Cross-Platform CI Matrix:** Tested on `windows-latest`, `macos-latest`, and `ubuntu-latest` for both the Python FastAPI backend and the Tauri 2 desktop shell.
 
 ## Repo evolution guideline
 
