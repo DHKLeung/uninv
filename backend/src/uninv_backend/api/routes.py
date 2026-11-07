@@ -6,7 +6,12 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 
 from uninv_backend.ibkr import ibkr_service
-from uninv_backend.models import AccountValues, Position, SupportingBroker
+from uninv_backend.models import (
+    BrokerAccountSnapshot,
+    Currency,
+    FxRate,
+    SupportingBroker,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,11 +60,11 @@ def get_accounts(
 
 
 @router.get(
-    "/account-values",
-    response_model=AccountValues,
-    summary="Get key account values and cash balance breakdown",
+    "/snapshot",
+    response_model=BrokerAccountSnapshot,
+    summary="Get unified broker account snapshot",
 )
-def get_account_values(
+def get_snapshot(
     broker_id: Annotated[
         str,
         Query(
@@ -74,53 +79,51 @@ def get_account_values(
             examples=["U16110728"],
         ),
     ],
-) -> AccountValues:
-    """Return raw account margins and multi-currency cash balances."""
+) -> BrokerAccountSnapshot:
+    """Return complete account snapshot including margins, cash balances, and positions."""
     if broker_id != "ibkr":
         raise HTTPException(status_code=404, detail=f"Broker '{broker_id}' not supported")
 
     try:
-        return ibkr_service.get_account_values(account_id)
+        return ibkr_service.get_snapshot(account_id)
     except ConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
-        logger.exception(f"Error fetching IBKR account values for {account_id}")
+        logger.exception(f"Error fetching snapshot for {account_id}")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get(
-    "/positions",
-    response_model=list[Position],
-    summary="List positions for a broker account",
+    "/fx",
+    response_model=FxRate,
+    summary="Get live foreign exchange rate",
 )
-def get_positions(
-    broker_id: Annotated[
-        str,
+def get_fx(
+    base: Annotated[
+        Currency,
         Query(
-            description="Broker identifier, e.g. 'ibkr'",
-            examples=["ibkr"],
+            description="Base currency code, e.g. 'EUR'",
+            examples=["EUR"],
         ),
     ],
-    account_id: Annotated[
-        str,
+    quote: Annotated[
+        Currency,
         Query(
-            description="Broker account ID, e.g. 'U16110728'",
-            examples=["U16110728"],
+            description="Quote currency code, e.g. 'USD'",
+            examples=["USD"],
         ),
     ],
-) -> list[Position]:
-    """Return raw holding positions for the specified broker and account."""
-    if broker_id != "ibkr":
-        raise HTTPException(status_code=404, detail=f"Broker '{broker_id}' not supported")
-
+) -> FxRate:
+    """Return current exchange rate where 1 unit of base = rate units of quote."""
     try:
-        return ibkr_service.get_positions(account_id)
+        rate = ibkr_service.get_fx_rate(base, quote)
+        return FxRate(base=base, quote=quote, rate=round(rate, 6))
     except ConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        logger.exception(f"Error fetching IBKR positions for {account_id}")
+        logger.exception(f"Error fetching FX rate for {base.value}/{quote.value}")
         raise HTTPException(status_code=500, detail=str(e)) from e

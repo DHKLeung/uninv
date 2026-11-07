@@ -4,7 +4,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from uninv_backend.app import app
-from uninv_backend.models import AccountValues, CashBalanceItem, Position
+from uninv_backend.models import (
+    AccountValues,
+    BrokerAccountSnapshot,
+    CashBalanceItem,
+    Currency,
+    Exchange,
+    OptionType,
+    Position,
+    SecurityType,
+)
 
 
 @pytest.fixture
@@ -57,133 +66,185 @@ def test_accounts_service_unavailable_503(client: TestClient) -> None:
         assert "Could not connect to IBKR gateway" in resp.json()["detail"]
 
 
-def test_account_values_endpoint(client: TestClient) -> None:
+def test_snapshot_endpoint(client: TestClient) -> None:
     mock_values = AccountValues(
+        currency=Currency.USD,
         available_funds=42138.60,
         buying_power=280923.98,
-        excess_liquidity=48390.88,
-        maintenance_margin=51633.95,
-        currency="USD",
+        cash_balance=-6612.62,
         cash_balances=[
-            CashBalanceItem(currency="USD", amount=-6612.62),
-            CashBalanceItem(currency="HKD", amount=12500.00),
+            CashBalanceItem(currency=Currency.USD, amount=-6612.62),
+            CashBalanceItem(currency=Currency.HKD, amount=12500.00),
         ],
+        equity_with_loan_value=99883.58,
+        excess_liquidity=48390.88,
+        gross_position_value=123573.20,
+        init_margin_req=57744.98,
+        maint_margin_req=51623.57,
+        net_liquidation=100014.45,
+        unrealized_pnl=-2783.42,
     )
-    with patch(
-        "uninv_backend.api.routes.ibkr_service.get_account_values",
-        return_value=mock_values,
-    ):
-        resp = client.get("/api/v1/account-values?broker_id=ibkr&account_id=U16110728")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["available_funds"] == 42138.60
-        assert data["buying_power"] == 280923.98
-        assert data["excess_liquidity"] == 48390.88
-        assert data["maintenance_margin"] == 51633.95
-        assert data["currency"] == "USD"
-        assert len(data["cash_balances"]) == 2
-        assert data["cash_balances"][0] == {"currency": "USD", "amount": -6612.62}
-        assert data["cash_balances"][1] == {"currency": "HKD", "amount": 12500.00}
 
-
-def test_account_values_unknown_broker_404(client: TestClient) -> None:
-    resp = client.get("/api/v1/account-values?broker_id=futubull&account_id=U16110728")
-    assert resp.status_code == 404
-
-
-def test_account_values_unknown_account_404(client: TestClient) -> None:
-    with patch(
-        "uninv_backend.api.routes.ibkr_service.get_account_values",
-        side_effect=ValueError("Account 'invalid' not found"),
-    ):
-        resp = client.get("/api/v1/account-values?broker_id=ibkr&account_id=invalid")
-        assert resp.status_code == 404
-        assert "not found" in resp.json()["detail"]
-
-
-def test_positions_endpoint(client: TestClient) -> None:
     mock_positions = [
         Position(
             instrument="ALPHA ARCHITECT 1-3 MNTH BOX",
             symbol="BOXX",
             position=463.0,
-            average_price=115.5847,
-            market_price=118.95,
+            avg_price=115.5847,
+            mark_price=118.95,
+            cost_basis=53515.72,
+            market_value=55073.85,
+            unrealized_pnl=1558.13,
             multiplier=1.0,
-            currency="USD",
-            primary_exchange="BATS",
+            currency=Currency.USD,
+            exchange=Exchange.BATS,
+            sec_type=SecurityType.STOCKS,
             last_trading_date=None,
-            sec_type="STK",
             strike=None,
-            right=None,
-            underlying_symbol="BOXX",
-            con_id=604408720,
+            option_type=None,
         ),
         Position(
-            instrument="ALPHABET INC-CL A",
-            symbol="GOOGL 290119C00230000",
+            instrument="NVDA Jan19'29 145 CALL",
+            symbol="NVDA  290119C00145000",
             position=1.0,
-            average_price=96.6577,
-            market_price=100.7369,
+            avg_price=70.8185,
+            mark_price=74.9776,
+            cost_basis=7081.85,
+            market_value=7497.76,
+            unrealized_pnl=415.91,
             multiplier=100.0,
-            currency="USD",
-            primary_exchange="AMEX",
+            currency=Currency.USD,
+            exchange=Exchange.AMEX,
+            sec_type=SecurityType.OPTIONS,
             last_trading_date="20290119",
-            sec_type="OPT",
-            strike=230.0,
-            right="C",
-            underlying_symbol="GOOGL",
-            con_id=924079172,
+            strike=145.0,
+            option_type=OptionType.CALL,
         ),
     ]
 
+    mock_snapshot = BrokerAccountSnapshot(
+        broker_id="ibkr",
+        account_id="U16110728",
+        account_values=mock_values,
+        positions=mock_positions,
+    )
+
     with patch(
-        "uninv_backend.api.routes.ibkr_service.get_positions",
-        return_value=mock_positions,
+        "uninv_backend.api.routes.ibkr_service.get_snapshot",
+        return_value=mock_snapshot,
     ):
-        resp = client.get("/api/v1/positions?broker_id=ibkr&account_id=U16110728")
+        resp = client.get("/api/v1/snapshot?broker_id=ibkr&account_id=U16110728")
         assert resp.status_code == 200
-        positions = resp.json()
+        data = resp.json()
+        assert data["broker_id"] == "ibkr"
+        assert data["account_id"] == "U16110728"
+
+        # Check account values
+        av = data["account_values"]
+        assert av["currency"] == "USD"
+        assert av["available_funds"] == 42138.60
+        assert av["buying_power"] == 280923.98
+        assert av["cash_balance"] == -6612.62
+        assert av["net_liquidation"] == 100014.45
+        assert av["unrealized_pnl"] == -2783.42
+        assert len(av["cash_balances"]) == 2
+
+        # Check positions
+        positions = data["positions"]
         assert len(positions) == 2
 
-        # Check raw non-derived fields
         boxx = positions[0]
         assert boxx["instrument"] == "ALPHA ARCHITECT 1-3 MNTH BOX"
         assert boxx["symbol"] == "BOXX"
         assert boxx["position"] == 463.0
-        assert boxx["average_price"] == 115.5847
-        assert boxx["market_price"] == 118.95
-        assert boxx["multiplier"] == 1.0
-        assert boxx["currency"] == "USD"
-        assert boxx["primary_exchange"] == "BATS"
-        assert boxx["last_trading_date"] is None
-        assert boxx["sec_type"] == "STK"
-        # Ensure no derived metrics are returned
-        assert "market_value" not in boxx
-        assert "cost_basis" not in boxx
-        assert "unrealized_pnl" not in boxx
+        assert boxx["avg_price"] == 115.5847
+        assert boxx["mark_price"] == 118.95
+        assert boxx["cost_basis"] == 53515.72
+        assert boxx["market_value"] == 55073.85
+        assert boxx["unrealized_pnl"] == 1558.13
+        assert boxx["exchange"] == "BATS"
+        assert boxx["sec_type"] == "STOCKS"
+        assert boxx["option_type"] is None
 
-        googl = positions[1]
-        assert googl["instrument"] == "ALPHABET INC-CL A"
-        assert googl["symbol"] == "GOOGL 290119C00230000"
-        assert googl["multiplier"] == 100.0
-        assert googl["strike"] == 230.0
-        assert googl["right"] == "C"
-        assert googl["last_trading_date"] == "20290119"
+        nvda = positions[1]
+        assert nvda["instrument"] == "NVDA Jan19'29 145 CALL"
+        assert nvda["multiplier"] == 100.0
+        assert nvda["strike"] == 145.0
+        assert nvda["option_type"] == "CALL"
+        assert nvda["sec_type"] == "OPTIONS"
+        assert nvda["cost_basis"] == 7081.85
+        assert nvda["market_value"] == 7497.76
 
 
-def test_positions_unknown_broker_404(client: TestClient) -> None:
-    resp = client.get("/api/v1/positions?broker_id=unknown&account_id=U16110728")
+def test_snapshot_unknown_broker_404(client: TestClient) -> None:
+    resp = client.get("/api/v1/snapshot?broker_id=futubull&account_id=U16110728")
     assert resp.status_code == 404
 
 
-def test_positions_unknown_account_404(client: TestClient) -> None:
+def test_snapshot_unknown_account_404(client: TestClient) -> None:
     with patch(
-        "uninv_backend.api.routes.ibkr_service.get_positions",
+        "uninv_backend.api.routes.ibkr_service.get_snapshot",
         side_effect=ValueError("Account 'invalid' not found"),
     ):
-        resp = client.get("/api/v1/positions?broker_id=ibkr&account_id=invalid")
+        resp = client.get("/api/v1/snapshot?broker_id=ibkr&account_id=invalid")
         assert resp.status_code == 404
+        assert "not found" in resp.json()["detail"]
+
+
+def test_fx_endpoint(client: TestClient) -> None:
+    with patch(
+        "uninv_backend.api.routes.ibkr_service.get_fx_rate",
+        return_value=1.1219,
+    ):
+        resp = client.get("/api/v1/fx?base=EUR&quote=USD")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["base"] == "EUR"
+        assert data["quote"] == "USD"
+        assert data["rate"] == 1.1219
+
+
+def test_fx_endpoint_same_currency(client: TestClient) -> None:
+    resp = client.get("/api/v1/fx?base=USD&quote=USD")
+    assert resp.status_code == 200
+    assert resp.json() == {"base": "USD", "quote": "USD", "rate": 1.0}
+
+
+def test_fx_endpoint_invalid_currency_422(client: TestClient) -> None:
+    resp = client.get("/api/v1/fx?base=INVALID&quote=USD")
+    assert resp.status_code == 422
+
+
+def test_derivative_instrument_name_formatter() -> None:
+    from ib_async import FuturesOption, Option, Stock
+
+    from uninv_backend.ibkr import _format_instrument_name
+
+    # 1. Equity Option
+    opt = Option(
+        symbol="NVDA",
+        lastTradeDateOrContractMonth="20290119",
+        strike=145.0,
+        right="C",
+    )
+    name_opt = _format_instrument_name(opt, "NVIDIA CORP")
+    assert name_opt == "NVDA Jan19'29 145 CALL"
+
+    # 2. Futures Option
+    fop = FuturesOption(
+        symbol="ES",
+        lastTradeDateOrContractMonth="20261218",
+        strike=7400.0,
+        right="P",
+        tradingClass="EW3",
+    )
+    name_fop = _format_instrument_name(fop, "E-mini S&P 500")
+    assert name_fop == "ES FOP(EW3) Dec18'26 7400 PUT"
+
+    # 3. Stock uses longName fallback
+    stk = Stock(symbol="BOXX")
+    name_stk = _format_instrument_name(stk, "ALPHA ARCHITECT 1-3 MNTH BOX")
+    assert name_stk == "ALPHA ARCHITECT 1-3 MNTH BOX"
 
 
 def test_normalize_average_price_for_derivatives() -> None:
