@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from uninv_backend.ibkr import ibkr_service
 from uninv_backend.models import (
+    AccountsResponse,
     BrokerAccountSnapshot,
     Currency,
     FxRate,
@@ -34,7 +35,7 @@ def get_supporting_brokers() -> list[SupportingBroker]:
 
 @router.get(
     "/accounts",
-    response_model=list[str],
+    response_model=AccountsResponse,
     summary="List accounts for a broker",
 )
 def get_accounts(
@@ -45,13 +46,14 @@ def get_accounts(
             examples=["ibkr"],
         ),
     ],
-) -> list[str]:
-    """Return pure account IDs for the specified broker."""
+) -> AccountsResponse:
+    """Return managed accounts with query timestamp."""
     if broker_id != "ibkr":
         raise HTTPException(status_code=404, detail=f"Broker '{broker_id}' not supported")
 
     try:
-        return ibkr_service.get_accounts()
+        accounts, asof = ibkr_service.get_accounts()
+        return AccountsResponse(broker_id=broker_id, asof=asof, accounts=accounts)
     except ConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except Exception as e:
@@ -118,8 +120,8 @@ def get_fx(
 ) -> FxRate:
     """Return current exchange rate where 1 unit of base = rate units of quote."""
     try:
-        rate = ibkr_service.get_fx_rate(base, quote)
-        return FxRate(base=base, quote=quote, rate=round(rate, 6))
+        rate, asof = ibkr_service.get_fx_rate(base, quote)
+        return FxRate(base=base, quote=quote, rate=round(rate, 6), asof=asof)
     except ConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except ValueError as e:

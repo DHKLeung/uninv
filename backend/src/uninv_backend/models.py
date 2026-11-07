@@ -4,6 +4,7 @@ Standardized broker models with strict Enums for loud failure on new symbols,
 exchanges, security types, or currencies.
 """
 
+from datetime import datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, Field
@@ -67,6 +68,14 @@ class SupportingBroker(BaseModel):
     name: str = Field(description="Broker display name")
 
 
+class AccountsResponse(BaseModel):
+    """List of account IDs for a broker with acquisition timestamp."""
+
+    broker_id: str = Field(description="Broker identifier, e.g. 'ibkr'")
+    asof: datetime = Field(description="UTC timestamp of the query (ISO 8601)")
+    accounts: list[str] = Field(description="List of managed account IDs")
+
+
 class CashBalanceItem(BaseModel):
     """Cash balance in a specific non-BASE currency."""
 
@@ -111,8 +120,8 @@ class Position(BaseModel):
     currency: Currency = Field(description="Trading currency")
     exchange: Exchange | None = Field(default=None, description="Primary exchange")
     sec_type: SecurityType = Field(description="Standardized security type")
-    last_trading_date: str | None = Field(
-        default=None, description="Last trading date / expiration (YYYYMMDD)"
+    last_trade_date: str | None = Field(
+        default=None, description="Last trading date / expiration in YYYY-MM-DD format"
     )
     strike: float | None = Field(default=None, description="Option/future option strike price")
     option_type: OptionType | None = Field(default=None, description="Option type (CALL or PUT)")
@@ -123,6 +132,7 @@ class BrokerAccountSnapshot(BaseModel):
 
     broker_id: str = Field(description="Broker identifier, e.g. 'ibkr'")
     account_id: str = Field(description="Broker account identifier, e.g. 'U16110728'")
+    asof: datetime = Field(description="UTC timestamp of the query (ISO 8601)")
     account_values: AccountValues = Field(description="Account-wide margins and cash balances")
     positions: list[Position] = Field(default_factory=list, description="Open positions")
 
@@ -133,6 +143,7 @@ class FxRate(BaseModel):
     base: Currency = Field(description="Base currency")
     quote: Currency = Field(description="Quote currency")
     rate: float = Field(description="Units of quote per 1 unit of base")
+    asof: datetime = Field(description="UTC timestamp of the query (ISO 8601)")
 
 
 # Backwards compatibility alias

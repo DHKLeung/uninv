@@ -102,17 +102,17 @@ _Last updated: 2026-11-07_
   - Enums defined: `Currency` (USD, HKD, EUR, etc.), `Exchange` (BATS, ARCA, NASDAQ, AMEX, NYSE, CME, OSL, IDEALPRO, etc.), `SecurityType` (STOCKS, OPTIONS, FUTURES, FUTURES_OPTIONS, CRYPTO, CASH), and `OptionType` (CALL, PUT).
   - Endpoints converted to query parameters and synchronous handlers (`def`, run in FastAPI threadpool):
     - `GET /api/v1/supporting-brokers`: returns `[{"id": "ibkr", "name": "Interactive Brokers"}]`.
-    - `GET /api/v1/accounts?broker_id=ibkr`: returns pure account ID strings, e.g. `["U16110728"]`.
-    - `GET /api/v1/snapshot?broker_id=ibkr&account_id=U16110728`: unified account snapshot combining account-wide margins/cash (`AccountValues`) and open holdings (`Position` list).
-    - `GET /api/v1/fx?base=EUR&quote=USD`: live FX exchange rate from IBKR with in-memory caching and reciprocal/triangulation resolution.
+    - `GET /api/v1/accounts?broker_id=ibkr`: returns `AccountsResponse` dict `{"broker_id": "ibkr", "asof": "...", "accounts": ["U16110728"]}`.
+    - `GET /api/v1/snapshot?broker_id=ibkr&account_id=U16110728`: unified account snapshot combining account-wide margins/cash (`AccountValues`), open holdings (`Position` list), and UTC `asof` timestamp.
+    - `GET /api/v1/fx?base=EUR&quote=USD`: live FX exchange rate from IBKR with in-memory caching, reciprocal/triangulation resolution, and UTC `asof` timestamp.
   - `Position` model:
-    - Standardized fields: `avg_price`, `mark_price`, `cost_basis` (computed by backend as `position * avg_price * multiplier`), `market_value` (directly from API feed), `unrealized_pnl` (directly from API feed), `exchange`, `sec_type`, `option_type`.
+    - Standardized fields: `avg_price`, `mark_price`, `cost_basis` (computed by backend as `position * avg_price * multiplier`), `market_value` (directly from API feed), `unrealized_pnl` (directly from API feed), `exchange`, `sec_type`, `option_type`, `last_trade_date` (in `YYYY-MM-DD` format).
     - Precision instrument names for derivatives: e.g. `NVDA Jan19'29 145 CALL` and `ES FOP(EW3) Dec18'26 7400 PUT` (matching TWS on-screen format).
     - Removed unused `con_id` and `underlying_symbol`.
   - `AccountValues` model:
     - Account-wide totals (non-BASE, explicit currency): `available_funds`, `buying_power`, `cash_balance`, `cash_balances` (multi-currency list), `equity_with_loan_value`, `excess_liquidity`, `gross_position_value`, `init_margin_req`, `maint_margin_req`, `net_liquidation`, `unrealized_pnl`.
   - `IBKRService` in `backend/src/uninv_backend/ibkr.py` connects directly to TWS on port 7496 with `readonly=True` (connects in ~0.1s), thread-safe querying via `threading.Lock`, and in-memory contract name/FX caching.
-  - All 16 backend tests pass, Ruff check passes, Tauri `cargo check` passes.
+  - All 17 backend tests pass, Ruff check passes, Tauri `cargo check` passes.
 - ⏸️ Desktop GUI temporarily stale (awaiting complete redesign to match new backend data contract).
 - ✅ Standalone Broker Daemon Architecture:
   - TWS verified and connected via socket API on port 7496.

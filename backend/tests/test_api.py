@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import pytest
@@ -41,13 +42,17 @@ def test_supporting_brokers_endpoint(client: TestClient) -> None:
 
 
 def test_accounts_endpoint(client: TestClient) -> None:
+    test_dt = datetime(2026, 11, 7, 23, 0, 0, tzinfo=UTC)
     with patch(
         "uninv_backend.api.routes.ibkr_service.get_accounts",
-        return_value=["U16110728"],
+        return_value=(["U16110728"], test_dt),
     ):
         resp = client.get("/api/v1/accounts?broker_id=ibkr")
         assert resp.status_code == 200
-        assert resp.json() == ["U16110728"]
+        data = resp.json()
+        assert data["broker_id"] == "ibkr"
+        assert data["accounts"] == ["U16110728"]
+        assert "2026-11-07T23:00:00" in data["asof"]
 
 
 def test_accounts_unknown_broker_404(client: TestClient) -> None:
@@ -67,6 +72,7 @@ def test_accounts_service_unavailable_503(client: TestClient) -> None:
 
 
 def test_snapshot_endpoint(client: TestClient) -> None:
+    test_dt = datetime(2026, 11, 7, 23, 0, 0, tzinfo=UTC)
     mock_values = AccountValues(
         currency=Currency.USD,
         available_funds=42138.60,
@@ -99,7 +105,7 @@ def test_snapshot_endpoint(client: TestClient) -> None:
             currency=Currency.USD,
             exchange=Exchange.BATS,
             sec_type=SecurityType.STOCKS,
-            last_trading_date=None,
+            last_trade_date=None,
             strike=None,
             option_type=None,
         ),
@@ -116,7 +122,7 @@ def test_snapshot_endpoint(client: TestClient) -> None:
             currency=Currency.USD,
             exchange=Exchange.AMEX,
             sec_type=SecurityType.OPTIONS,
-            last_trading_date="20290119",
+            last_trade_date="2029-01-19",
             strike=145.0,
             option_type=OptionType.CALL,
         ),
@@ -125,6 +131,7 @@ def test_snapshot_endpoint(client: TestClient) -> None:
     mock_snapshot = BrokerAccountSnapshot(
         broker_id="ibkr",
         account_id="U16110728",
+        asof=test_dt,
         account_values=mock_values,
         positions=mock_positions,
     )
@@ -138,6 +145,7 @@ def test_snapshot_endpoint(client: TestClient) -> None:
         data = resp.json()
         assert data["broker_id"] == "ibkr"
         assert data["account_id"] == "U16110728"
+        assert "2026-11-07T23:00:00" in data["asof"]
 
         # Check account values
         av = data["account_values"]
@@ -164,6 +172,7 @@ def test_snapshot_endpoint(client: TestClient) -> None:
         assert boxx["unrealized_pnl"] == 1558.13
         assert boxx["exchange"] == "BATS"
         assert boxx["sec_type"] == "STOCKS"
+        assert boxx["last_trade_date"] is None
         assert boxx["option_type"] is None
 
         nvda = positions[1]
@@ -172,6 +181,7 @@ def test_snapshot_endpoint(client: TestClient) -> None:
         assert nvda["strike"] == 145.0
         assert nvda["option_type"] == "CALL"
         assert nvda["sec_type"] == "OPTIONS"
+        assert nvda["last_trade_date"] == "2029-01-19"
         assert nvda["cost_basis"] == 7081.85
         assert nvda["market_value"] == 7497.76
 
@@ -192,9 +202,10 @@ def test_snapshot_unknown_account_404(client: TestClient) -> None:
 
 
 def test_fx_endpoint(client: TestClient) -> None:
+    test_dt = datetime(2026, 11, 7, 23, 0, 0, tzinfo=UTC)
     with patch(
         "uninv_backend.api.routes.ibkr_service.get_fx_rate",
-        return_value=1.1219,
+        return_value=(1.1219, test_dt),
     ):
         resp = client.get("/api/v1/fx?base=EUR&quote=USD")
         assert resp.status_code == 200
@@ -202,17 +213,31 @@ def test_fx_endpoint(client: TestClient) -> None:
         assert data["base"] == "EUR"
         assert data["quote"] == "USD"
         assert data["rate"] == 1.1219
+        assert "2026-11-07T23:00:00" in data["asof"]
 
 
 def test_fx_endpoint_same_currency(client: TestClient) -> None:
     resp = client.get("/api/v1/fx?base=USD&quote=USD")
     assert resp.status_code == 200
-    assert resp.json() == {"base": "USD", "quote": "USD", "rate": 1.0}
+    data = resp.json()
+    assert data["base"] == "USD"
+    assert data["quote"] == "USD"
+    assert data["rate"] == 1.0
+    assert "asof" in data
 
 
 def test_fx_endpoint_invalid_currency_422(client: TestClient) -> None:
     resp = client.get("/api/v1/fx?base=INVALID&quote=USD")
     assert resp.status_code == 422
+
+
+def test_format_date_iso() -> None:
+    from uninv_backend.ibkr import _format_date_iso
+
+    assert _format_date_iso("20261218") == "2026-12-18"
+    assert _format_date_iso("20290119") == "2029-01-19"
+    assert _format_date_iso(None) is None
+    assert _format_date_iso("") is None
 
 
 def test_derivative_instrument_name_formatter() -> None:

@@ -5,7 +5,7 @@ import logging
 import math
 import threading
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 
 from ib_async import IB, Contract, Forex, FuturesOption, Option
 
@@ -42,6 +42,16 @@ def _format_date_str(d_str: str | None) -> str:
         return f"{dt.strftime('%b%d')}'{dt.strftime('%y')}"
     except Exception:
         return d_str
+
+
+def _format_date_iso(d_str: str | None) -> str | None:
+    """Format expiration date '20261218' to '2026-12-18'."""
+    if not d_str:
+        return None
+    d_clean = d_str.strip()
+    if len(d_clean) >= 8 and d_clean[:8].isdigit():
+        return f"{d_clean[:4]}-{d_clean[4:6]}-{d_clean[6:8]}"
+    return d_clean
 
 
 def _format_strike(strike: float | None) -> str:
@@ -182,12 +192,13 @@ class IBKRService:
                 f"enabled on port {self.port}."
             ) from e
 
-    def get_accounts(self) -> list[str]:
-        """Return list of managed account IDs, e.g. ['U16110728']."""
+    def get_accounts(self) -> tuple[list[str], datetime]:
+        """Return list of managed account IDs with query timestamp."""
+        asof = datetime.now(UTC)
         with self._lock:
             self._ensure_connected()
             try:
-                return list(self._ib.managedAccounts())
+                return list(self._ib.managedAccounts()), asof
             except Exception as e:
                 self.disconnect()
                 raise ConnectionError(f"Error communicating with IBKR TWS: {e}") from e
@@ -407,7 +418,7 @@ class IBKRService:
                 elif raw_right in ("P", "PUT"):
                     option_type = OptionType.PUT
 
-                last_trade = c.lastTradeDateOrContractMonth or None
+                last_trade = _format_date_iso(c.lastTradeDateOrContractMonth)
                 strike = c.strike if (getattr(c, "strike", 0.0) and c.strike > 0) else None
 
                 positions.append(
@@ -424,7 +435,7 @@ class IBKRService:
                         currency=currency,
                         exchange=exchange,
                         sec_type=sec_type,
-                        last_trading_date=last_trade,
+                        last_trade_date=last_trade,
                         strike=strike,
                         option_type=option_type,
                     )
@@ -434,11 +445,13 @@ class IBKRService:
 
     def get_snapshot(self, account_id: str) -> BrokerAccountSnapshot:
         """Return combined account snapshot containing account values and open positions."""
+        asof = datetime.now(UTC)
         values = self.get_account_values(account_id)
         positions = self.get_positions(account_id)
         return BrokerAccountSnapshot(
             broker_id="ibkr",
             account_id=account_id,
+            asof=asof,
             account_values=values,
             positions=positions,
         )
@@ -463,11 +476,12 @@ class IBKRService:
             logger.debug("Direct forex probe failed for %s: %s", pair, e)
         return None
 
-    def get_fx_rate(self, base: Currency, quote: Currency) -> float:
-        """Return FX rate (1 unit of base = X units of quote) with caching and triangulation."""
+    def get_fx_rate(self, base: Currency, quote: Currency) -> tuple[float, datetime]:
+        """Return FX rate (1 unit of base = X units of quote) and query timestamp."""
         if base == quote:
-            return 1.0
+            return 1.0, datetime.now(UTC)
 
+        asof = datetime.now(UTC)
         with self._lock:
             self._ensure_connected()
             cache_key = (base, quote)
@@ -475,7 +489,7 @@ class IBKRService:
             if cache_key in self._fx_cache:
                 rate, ts = self._fx_cache[cache_key]
                 if now - ts < 15.0:  # 15 seconds TTL
-                    return rate
+                    return rate, asof
 
             # 1. Try direct pair
             direct_pair = f"{base.value}{quote.value}"
@@ -483,7 +497,7 @@ class IBKRService:
             if rate is not None and rate > 0:
                 self._fx_cache[(base, quote)] = (rate, now)
                 self._fx_cache[(quote, base)] = (1.0 / rate, now)
-                return rate
+                return rate, asof
 
             # 2. Try inverted pair
             inverted_pair = f"{quote.value}{base.value}"
@@ -492,16 +506,16 @@ class IBKRService:
                 rate = 1.0 / inv_rate
                 self._fx_cache[(base, quote)] = (rate, now)
                 self._fx_cache[(quote, base)] = (inv_rate, now)
-                return rate
+                return rate, asof
 
             # 3. Triangulate via USD
             if base != Currency.USD and quote != Currency.USD:
-                rate_base_usd = self.get_fx_rate(base, Currency.USD)
-                rate_usd_quote = self.get_fx_rate(Currency.USD, quote)
+                rate_base_usd, _ = self.get_fx_rate(base, Currency.USD)
+                rate_usd_quote, _ = self.get_fx_rate(Currency.USD, quote)
                 triangulated = rate_base_usd * rate_usd_quote
                 self._fx_cache[(base, quote)] = (triangulated, now)
                 self._fx_cache[(quote, base)] = (1.0 / triangulated, now)
-                return triangulated
+                return triangulated, asof
 
             raise ValueError(f"Could not resolve exchange rate for {base.value}/{quote.value}")
 
