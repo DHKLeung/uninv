@@ -99,7 +99,7 @@ _Last updated: 2026-11-06_
   - Accounts metadata: `IBKR-HK (0728)`, `Futubull-HK (7283)`, `Futubull-HK (7612)`, `Futubull-HK (0281)`.
   - Positions: mock data across stocks, ETFs, futures (with delivery date), stock options (with expiry date), futures options (with expiry date), and Bitcoin (all in USD). Raw broker fields only; derived metrics (market value, cost basis, unrealised P&L) computed in frontend.
   - Clean endpoints: `GET /api/v1/brokers`, `GET /api/v1/accounts/{broker_id}`, `GET /api/v1/cash-balance/{broker_id}`, `GET /api/v1/positions/{broker_id}`.
-  - All 11 backend tests pass, Ruff check passes.
+  - All 12 backend tests pass, Ruff check passes.
 - ✅ GUI Application updated:
   - Configured for 16:9 1600×900 default display layout (`tauri.conf.json` and responsive CSS).
   - Navigation tab header with `Portfolio` active tab.

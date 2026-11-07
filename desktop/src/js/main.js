@@ -62,10 +62,17 @@ async function load() {
 
     state.positions = positionsNested.flat().map((p) => {
       const mult = p.multiplier ?? 1.0;
-      const marketValue = p.position * p.mark_price * mult;
-      const costBasis = p.position * p.average_price * mult;
-      const unrealisedPnl = marketValue - costBasis;
-      const unrealisedPnlPct = costBasis !== 0 ? unrealisedPnl / Math.abs(costBasis) : 0;
+      const marketValue = p.market_value != null
+        ? p.market_value
+        : (p.position ?? 0) * (p.mark_price ?? 0) * mult;
+      const costBasis = p.cost_basis != null
+        ? p.cost_basis
+        : (p.average_price != null ? (p.position ?? 0) * p.average_price * mult : null);
+      const unrealisedPnl = costBasis != null ? marketValue - costBasis : null;
+      const unrealisedPnlPct = costBasis != null && costBasis !== 0
+        ? unrealisedPnl / Math.abs(costBasis)
+        : null;
+
       return {
         ...p,
         account_alias: accountAliasMap[p.account_id] ?? p.account_id,
@@ -136,7 +143,7 @@ function renderKpis() {
     ? state.positions
     : state.positions.filter((p) => p.account_id === state.selectedAccount);
 
-  const marketValUsd = filteredPositions.reduce((acc, p) => acc + p.market_value, 0);
+  const marketValUsd = filteredPositions.reduce((acc, p) => acc + (p.market_value ?? 0), 0);
 
   const cashValUsd = state.selectedAccount
     ? (state.cashBalances[state.selectedAccount] ?? 0.0)
@@ -144,8 +151,8 @@ function renderKpis() {
 
   const netLiqUsd = marketValUsd + cashValUsd;
 
-  const totalCostBasis = filteredPositions.reduce((acc, p) => acc + p.cost_basis, 0);
-  const totalUnrealisedPnlUsd = filteredPositions.reduce((acc, p) => acc + p.unrealised_pnl, 0);
+  const totalCostBasis = filteredPositions.reduce((acc, p) => acc + (p.cost_basis ?? 0), 0);
+  const totalUnrealisedPnlUsd = filteredPositions.reduce((acc, p) => acc + (p.unrealised_pnl ?? 0), 0);
   const totalPnlPct = totalCostBasis !== 0 ? totalUnrealisedPnlUsd / Math.abs(totalCostBasis) : 0;
 
   // British English KPI displays
@@ -170,9 +177,9 @@ function renderAccounts() {
   grid.innerHTML = state.accounts
     .map((acct) => {
       const acctPositions = state.positions.filter((p) => p.account_id === acct.account_id);
-      const acctValUsd = acctPositions.reduce((acc, p) => acc + p.market_value, 0);
-      const acctPnlUsd = acctPositions.reduce((acc, p) => acc + p.unrealised_pnl, 0);
-      const acctCostBasis = acctPositions.reduce((acc, p) => acc + p.cost_basis, 0);
+      const acctValUsd = acctPositions.reduce((acc, p) => acc + (p.market_value ?? 0), 0);
+      const acctPnlUsd = acctPositions.reduce((acc, p) => acc + (p.unrealised_pnl ?? 0), 0);
+      const acctCostBasis = acctPositions.reduce((acc, p) => acc + (p.cost_basis ?? 0), 0);
       const acctPnlPct = acctCostBasis !== 0 ? acctPnlUsd / Math.abs(acctCostBasis) : 0;
       const isSelected = state.selectedAccount === acct.account_id;
 
@@ -301,8 +308,12 @@ function renderPositions() {
             <td class="num font-mono strong">${formatMoney(p.market_value, ccy)}</td>
             <td class="num"><span class="currency-badge">${esc(p.currency)}</span></td>
             <td class="num font-mono ${pnlClass(p.unrealised_pnl)}">
-              <div>${formatSignedMoney(p.unrealised_pnl, ccy)}</div>
-              <div class="small-pct">${formatPct(p.unrealised_pnl_pct, { signed: true })}</div>
+              ${
+                p.unrealised_pnl != null
+                  ? `<div>${formatSignedMoney(p.unrealised_pnl, ccy)}</div>
+                     <div class="small-pct">${formatPct(p.unrealised_pnl_pct, { signed: true })}</div>`
+                  : '<span class="muted">—</span>'
+              }
             </td>
           </tr>`;
         })

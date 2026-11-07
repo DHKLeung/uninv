@@ -115,10 +115,9 @@ def test_positions_ibkr_endpoint(client: TestClient) -> None:
         assert "expiry_date" in p
         assert "delivery_date" in p
         assert p["currency"] == "USD"
-        # Ensure derived metrics are not returned by the backend API
-        assert "market_value" not in p
-        assert "cost_basis" not in p
-        assert "unrealised_pnl" not in p
+        # Ensure derived metrics are not computed by the backend API for standard positions
+        assert p["market_value"] is None
+        assert p["cost_basis"] is None
 
     # Verify stock options
     googl_opt = next(p for p in positions if p["symbol"] == "GOOGL290119P00230000")
@@ -152,6 +151,41 @@ def test_positions_ibkr_endpoint(client: TestClient) -> None:
     assert qld["position"] == 111.13
     assert qld["mark_price"] == 74.36
     assert qld["average_price"] == 78.64
+
+
+def test_positions_futubull_endpoint(client: TestClient) -> None:
+    resp = client.get("/api/v1/positions/futubull-hk")
+    assert resp.status_code == 200
+    positions = resp.json()
+    assert len(positions) == 6
+
+    # Verify money market fund without units / prices
+    mmf = next(p for p in positions if p["symbol"] == "HK0000923844")
+    assert mmf["instrument"] == "GaoTeng USD Money Market Fund"
+    assert mmf["position"] is None
+    assert mmf["average_price"] is None
+    assert mmf["mark_price"] is None
+    assert mmf["market_value"] == 54565.17
+
+    # Filter account 7283
+    acct_7283 = client.get(
+        "/api/v1/positions/futubull-hk?account_id=1001279250287283"
+    ).json()
+    assert len(acct_7283) == 5
+
+    # Filter account 0281 (BTC)
+    acct_0281 = client.get(
+        "/api/v1/positions/futubull-hk?account_id=1001272756530281"
+    ).json()
+    assert len(acct_0281) == 1
+    assert acct_0281[0]["symbol"] == "BTC"
+    assert acct_0281[0]["position"] == 0.0791
+
+    # Filter account 7612 (empty)
+    acct_7612 = client.get(
+        "/api/v1/positions/futubull-hk?account_id=1001281798927612"
+    ).json()
+    assert len(acct_7612) == 0
 
 
 def test_positions_unknown_account_404(client: TestClient) -> None:

@@ -34,16 +34,19 @@ class Position(BaseModel):
     """Raw holding position as reported by a broker.
 
     Derived metrics such as market value, cost basis, and unrealised P&L
-    are calculated on the client side.
+    are calculated on the client side unless explicitly provided (e.g. for
+    money market funds or cash deposits without unit quantities).
     """
 
     account_id: str
     broker_id: str
     instrument: str
     symbol: str
-    position: float
-    average_price: float
-    mark_price: float
+    position: float | None = None
+    average_price: float | None = None
+    mark_price: float | None = None
+    market_value: float | None = None
+    cost_basis: float | None = None
     currency: str = "USD"
     expiry_date: str | None = None
     delivery_date: str | None = None

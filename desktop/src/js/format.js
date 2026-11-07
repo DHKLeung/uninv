@@ -18,6 +18,7 @@ const CURRENCY_SYMBOLS = {
  * Format a USD-based numeric value into the active display currency.
  */
 export function formatMoney(valInUsd, currency = "USD", { compact = false } = {}) {
+  if (valInUsd === null || valInUsd === undefined) return '<span class="muted">—</span>';
   const rate = FX_RATES[currency] ?? 1.0;
   const sym = CURRENCY_SYMBOLS[currency] ?? "$";
   const converted = valInUsd * rate;
@@ -36,6 +37,7 @@ export function formatMoney(valInUsd, currency = "USD", { compact = false } = {}
  * Format signed money (+ or -) with symbol.
  */
 export function formatSignedMoney(valInUsd, currency = "USD") {
+  if (valInUsd === null || valInUsd === undefined) return '<span class="muted">—</span>';
   const rate = FX_RATES[currency] ?? 1.0;
   const sym = CURRENCY_SYMBOLS[currency] ?? "$";
   const converted = valInUsd * rate;
@@ -55,6 +57,7 @@ export function formatSignedMoney(valInUsd, currency = "USD") {
  * Format percentage.
  */
 export function formatPct(fraction, { signed = true, digits = 2 } = {}) {
+  if (fraction === null || fraction === undefined) return '<span class="muted">—</span>';
   const pctVal = fraction * 100;
   const absStr = Math.abs(pctVal).toFixed(digits) + "%";
   if (signed) {
@@ -68,6 +71,7 @@ export function formatPct(fraction, { signed = true, digits = 2 } = {}) {
  * Format quantity.
  */
 export function formatQty(value) {
+  if (value === null || value === undefined) return '<span class="muted">—</span>';
   return value.toLocaleString("en-GB", { maximumFractionDigits: 4 });
 }
 
@@ -75,6 +79,7 @@ export function formatQty(value) {
  * Return CSS class for positive / negative P&L.
  */
 export function pnlClass(value) {
+  if (value === null || value === undefined) return "";
   if (value > 0.004) return "pos";
   if (value < -0.004) return "neg";
   return "";
