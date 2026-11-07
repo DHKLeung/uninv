@@ -313,6 +313,29 @@ def test_ibkr_service_connect_failure_raises_connection_error_with_reason() -> N
     assert default_service.port == 7496
 
 
+def test_string_normalization_and_whitespace_collapse() -> None:
+    # Test that multiple consecutive spaces are collapsed and strings stripped
+    pos = Position(
+        instrument="  NVDA   Jan19'29    145    CALL  ",
+        symbol="NVDA  290119C00145000",
+        position=1.0,
+        avg_price=70.8185,
+        mark_price=74.9776,
+        cost_basis=7081.85,
+        market_value=7497.76,
+        unrealized_pnl=415.91,
+        multiplier=100.0,
+        currency=Currency.USD,
+        exchange=Exchange.AMEX,
+        sec_type=SecurityType.OPTIONS,
+        last_trade_date="2029-01-19",
+        strike=145.0,
+        option_type=OptionType.CALL,
+    )
+    assert pos.instrument == "NVDA Jan19'29 145 CALL"
+    assert pos.symbol == "NVDA 290119C00145000"
+
+
 def test_endpoint_returns_503_when_tws_unreachable(client: TestClient) -> None:
     from uninv_backend.api import routes
     from uninv_backend.ibkr import IBKRService

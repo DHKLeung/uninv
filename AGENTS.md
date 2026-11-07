@@ -109,10 +109,12 @@ _Last updated: 2026-11-07_
     - Standardized fields: `avg_price`, `mark_price`, `cost_basis` (computed by backend as `position * avg_price * multiplier`), `market_value` (directly from API feed), `unrealized_pnl` (directly from API feed), `exchange`, `sec_type`, `option_type`, `last_trade_date` (in `YYYY-MM-DD` format).
     - Precision instrument names for derivatives: e.g. `NVDA Jan19'29 145 CALL` and `ES FOP(EW3) Dec18'26 7400 PUT` (matching TWS on-screen format).
     - Removed unused `con_id` and `underlying_symbol`.
+    - Strings guarded by `UninvModel` (collapsed to 1 space, stripped, fixing OCC double-spaced `localSymbol`).
+    - Raw numbers: zero rounding in backend; full raw float precision preserved.
   - `AccountValues` model:
     - Account-wide totals (non-BASE, explicit currency): `available_funds`, `buying_power`, `cash_balance`, `cash_balances` (multi-currency list), `equity_with_loan_value`, `excess_liquidity`, `gross_position_value`, `init_margin_req`, `maint_margin_req`, `net_liquidation`, `unrealized_pnl`.
   - `IBKRService` in `backend/src/uninv_backend/ibkr.py` connects directly to TWS on port 7496 with `readonly=True` (connects in ~0.1s), thread-safe querying via `threading.Lock`, and in-memory contract name/FX caching.
-  - All 17 backend tests pass, Ruff check passes, Tauri `cargo check` passes.
+  - All 18 backend tests pass, Ruff check passes, Tauri `cargo check` passes.
 - ⏸️ Desktop GUI temporarily stale (awaiting complete redesign to match new backend data contract).
 - ✅ Standalone Broker Daemon Architecture:
   - TWS verified and connected via socket API on port 7496.

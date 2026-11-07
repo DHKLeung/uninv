@@ -121,7 +121,7 @@ def get_fx(
     """Return current exchange rate where 1 unit of base = rate units of quote."""
     try:
         rate, asof = ibkr_service.get_fx_rate(base, quote)
-        return FxRate(base=base, quote=quote, rate=round(rate, 6), asof=asof)
+        return FxRate(base=base, quote=quote, rate=float(rate), asof=asof)
     except ConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except ValueError as e:

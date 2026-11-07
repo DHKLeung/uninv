@@ -370,13 +370,13 @@ class IBKRService:
                     mult = 1.0
 
                 # Normalise average unit price
-                avg_price = _normalize_average_price(item.averageCost, c, mult)
-                mark_price = round(item.marketPrice, 4)
+                avg_price = float(_normalize_average_price(item.averageCost, c, mult))
+                mark_price = float(item.marketPrice)
 
-                # Cost basis = position * avg_price * multiplier
-                cost_basis = round(item.position * avg_price * mult, 2)
-                market_val = round(item.marketValue, 2)
-                unrealized_pnl = round(item.unrealizedPNL, 2)
+                # Cost basis = position * avg_price * multiplier (raw float, no display rounding)
+                cost_basis = float(item.position * avg_price * mult)
+                market_val = float(item.marketValue)
+                unrealized_pnl = float(item.unrealizedPNL)
 
                 # Currency validation (loud fail if unsupported)
                 raw_curr = c.currency or "USD"
@@ -425,8 +425,8 @@ class IBKRService:
                     Position(
                         instrument=instrument_name,
                         symbol=c.localSymbol or c.symbol,
-                        position=item.position,
-                        avg_price=round(avg_price, 4),
+                        position=float(item.position),
+                        avg_price=avg_price,
                         mark_price=mark_price,
                         cost_basis=cost_basis,
                         market_value=market_val,

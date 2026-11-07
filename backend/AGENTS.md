@@ -20,6 +20,8 @@ Rules for `backend/`. Root `AGENTS.md` applies too.
 - Standardized broker translation philosophy:
   - Backend absorbs broker complexities, connection protocols, and format discrepancies.
   - Strict Enums (`Currency`, `Exchange`, `SecurityType`, `OptionType`) enforce loud failure when new/unmapped symbols, exchanges, or security types are encountered.
+  - All models inherit from `UninvModel`: every string field is automatically stripped and consecutive spaces collapsed to a single space (e.g. OCC double spaces in `localSymbol` like `"NVDA  290119C00145000"` $\to$ `"NVDA 290119C00145000"`).
+  - Raw numerical preservation: zero rounding in backend. All prices, values, and calculations (`cost_basis`, `market_value`, `unrealized_pnl`, `rate`) preserve raw floats. Rounding is strictly a GUI display concern.
   - `Position` fields:
     - `instrument`: descriptive name. Precise formatting for derivatives (e.g. `NVDA Jan19'29 145 CALL`, `ES FOP(EW3) Dec18'26 7400 PUT`), resolved company `longName` for stocks.
     - `symbol`: local contract symbol (`localSymbol`, e.g. `BOXX`, `EW3Z6 P7400`, `GOOGL 290119C00230000`).
