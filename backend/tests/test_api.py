@@ -81,26 +81,45 @@ def test_positions_ibkr_endpoint(client: TestClient) -> None:
         assert "mark_price" in p
         assert "currency" in p
         assert "expiry_date" in p
+        assert "delivery_date" in p
         assert p["currency"] == "USD"
         # Ensure derived metrics are not returned by the backend API
         assert "market_value" not in p
         assert "cost_basis" not in p
         assert "unrealised_pnl" not in p
 
-    # Verify options & futures options have expiry_date
-    aapl_opt = next(p for p in positions if p["symbol"] == "AAPL 261218C00240000")
+    # Verify stock option has expiry_date and no delivery_date
+    aapl_opt = next(p for p in positions if p["symbol"] == "AAPL261218C00240000")
+    assert aapl_opt["instrument"] == "AAPL Dec 18 '26 240C"
     assert aapl_opt["expiry_date"] == "2026-12-18"
+    assert aapl_opt["delivery_date"] is None
     assert aapl_opt["multiplier"] == 100.0
 
-    # Verify equity has null expiry_date
+    # Verify future has delivery_date and no expiry_date
+    es_fut = next(p for p in positions if p["symbol"] == "ESH27")
+    assert es_fut["instrument"] == "E-mini S&P 500 Mar 19 '27"
+    assert es_fut["delivery_date"] == "2027-03-19"
+    assert es_fut["expiry_date"] is None
+    assert es_fut["multiplier"] == 50.0
+
+    # Verify futures option has expiry_date and no delivery_date
+    es_fopt = next(p for p in positions if p["symbol"] == "ESH27 7400P 261218")
+    assert es_fopt["instrument"] == "E-mini S&P 500 Mar 19 '27 7400P Dec 18 '26"
+    assert es_fopt["expiry_date"] == "2026-12-18"
+    assert es_fopt["delivery_date"] is None
+    assert es_fopt["multiplier"] == 50.0
+
+    # Verify equity has null expiry_date and delivery_date
     aapl_stock = next(p for p in positions if p["symbol"] == "AAPL")
     assert aapl_stock["expiry_date"] is None
+    assert aapl_stock["delivery_date"] is None
 
     # Verify Bitcoin position is present
     btc = next(p for p in positions if p["symbol"] == "BTC")
     assert btc["instrument"] == "Bitcoin"
     assert btc["position"] == 1.25
     assert btc["expiry_date"] is None
+    assert btc["delivery_date"] is None
 
 
 def test_positions_futubull_endpoint(client: TestClient) -> None:

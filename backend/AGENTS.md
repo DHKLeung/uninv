@@ -14,7 +14,12 @@ Rules for `backend/`. Root `AGENTS.md` applies too.
 
 ## Conventions
 - Python 3.13, full type hints, `X | None`. Ruff: line length 100.
-- `Position` required fields: `instrument`, `symbol`, `position`, `average_price`, `mark_price`, `currency`, and `expiry_date`.
+- `Position` fields: `instrument`, `symbol`, `position`, `average_price`, `mark_price`, `currency`, `expiry_date`, and `delivery_date`.
+- Position naming conventions:
+  - Stock / ETF: descriptive name + ticker (e.g. `Alphabet Inc. Class A`, `GOOGL`).
+  - Stock Option: `GOOGL Dec 18 '26 140P`, symbol `GOOGL261218P00140000`, has `expiry_date`.
+  - Future: `E-mini S&P 500 Mar 19 '27`, symbol `ESH27`, has `delivery_date`.
+  - Futures Option: `E-mini S&P 500 Mar 19 '27 7400P Dec 18 '26`, symbol `ESH27 7400P 261218`, has `expiry_date`.
 - Derived figures (market value, cost basis, unrealised P&L) are computed client-side, keeping backend raw and thin.
 - Multipliers: Options = 100, ES futures / futures options = 50, NQ futures = 20, equities = 1.
 - All values currently in USD; FX conversion handled via active display currency (USD / GBP).

@@ -18,7 +18,7 @@ class AccountMetadata(BaseModel):
 
     account_id: str = Field(description="Broker account number, e.g. 'U16110728'")
     broker_id: str = Field(description="Broker identifier, e.g. 'ibkr-hk'")
-    alias: str = Field(description="Display alias, e.g. 'IBKR-HK(0728)'")
+    alias: str = Field(description="Display alias, e.g. 'IBKR-HK (0728)'")
 
 
 class Position(BaseModel):
@@ -37,4 +37,5 @@ class Position(BaseModel):
     mark_price: float
     currency: str = "USD"
     expiry_date: str | None = None
+    delivery_date: str | None = None
     multiplier: float = 1.0

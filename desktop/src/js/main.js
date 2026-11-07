@@ -261,6 +261,7 @@ function renderPositions() {
     ? rows
         .map((p) => {
           const expiry = p.expiry_date ? esc(p.expiry_date) : '<span class="muted">—</span>';
+          const delivery = p.delivery_date ? esc(p.delivery_date) : '<span class="muted">—</span>';
           return `
           <tr>
             <td>
@@ -273,6 +274,7 @@ function renderPositions() {
               <span class="account-tag">${esc(p.account_alias)}</span>
             </td>
             <td>${expiry}</td>
+            <td>${delivery}</td>
             <td class="num font-mono">${formatQty(p.position)}</td>
             <td class="num font-mono">${formatMoney(p.average_price, ccy)}</td>
             <td class="num font-mono">${formatMoney(p.mark_price, ccy)}</td>
@@ -285,7 +287,7 @@ function renderPositions() {
           </tr>`;
         })
         .join("")
-    : `<tr><td colspan="10" class="empty muted">No positions match the current account or search filter.</td></tr>`;
+    : `<tr><td colspan="11" class="empty muted">No positions match the current account or search filter.</td></tr>`;
 }
 
 // ---------------------------------------------------------------------------------------
