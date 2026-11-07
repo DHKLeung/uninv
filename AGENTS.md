@@ -16,10 +16,13 @@ strategy builder, live prices, etc. (roadmap in `README.md`).
   accounts metadata and positions. → see `backend/AGENTS.md`
 - `desktop/`: **Tauri 2** app (16:9 1600x900 default). `src/` = plain HTML/CSS/JS UI (no Node, no bundler);
   `src-tauri/` = thin Rust shell. → see `desktop/AGENTS.md`
+- `gateways/`: External broker API gateways (`gateways/ibkr-gateway/` for IBKR Client Portal Web API, `gateways/futubull-gateway/` for Futu OpenD).
 - `docs/architecture.md`: design decisions and the reasons for them. Update it when a decision
   changes.
-- `scripts/dev.ps1`: runs backend + desktop app (`-Browser` for UI in a browser, no Rust).
-- `scripts/dev.cmd`: Windows cmd/PowerShell wrapper (bypasses execution policy restrictions).
+- `scripts/dev.ps1`: runs backend + gateways + desktop app (`-Browser` for browser UI, `-ServicesOnly` for headless services, `-NoGateway` to skip gateways).
+- `scripts/dev.cmd`: Windows cmd/PowerShell wrapper (one-click double-clickable launcher).
+- `scripts/start-services.cmd`: one-click launcher for all gateways and backend in headless mode.
+- `scripts/run-ibkr-gateway.ps1`: standalone runner for the IBKR Client Portal Gateway (:5000) with automatic Java discovery.
 - `scripts/dev.sh`: macOS/Linux equivalent for bash/zsh.
 
 Data flow: UI → `invoke("api_get", {path})` → Rust proxy → `http://<host>:8000/api/v1/...` →
@@ -68,8 +71,9 @@ cd backend; uv sync                         # install deps
 cd backend; uv run uninv-backend --reload   # API :8000, docs at /docs
 cd backend; uv run pytest                   # tests (must pass before commit)
 cd backend; uv run ruff format .; uv run ruff check --fix .
-.\scripts\dev.ps1                           # backend + desktop app (or .\scripts\dev.cmd)
-.\scripts\dev.ps1 -Browser                  # backend + UI at http://127.0.0.1:1420
+.\scripts\dev.ps1                           # one-click: gateways + backend + desktop app (or .\scripts\dev.cmd)
+.\scripts\dev.ps1 -Browser                  # one-click: gateways + backend + UI at http://127.0.0.1:1420
+.\scripts\start-services.cmd                # one-click: gateways + backend only (headless)
 cd desktop\src-tauri; cargo tauri dev       # or `cargo run` (backend must be running)
 cd desktop\src-tauri; cargo tauri build     # installer
 ```
@@ -111,6 +115,11 @@ _Last updated: 2026-11-07_
     2. Cash Balances: displays associated account, broker, account number, currency, and cash balance.
   - Removed obsolete simulated badge, allocation panels, and groups.
 - ✅ Rust shell compiles cleanly (`cargo check`).
+- ✅ IBKR Client Portal Gateway integrated:
+  - Located in `gateways/ibkr-gateway/`.
+  - Added `scripts/run-ibkr-gateway.ps1` and `scripts/run-ibkr-gateway.cmd` launcher with auto-detection for Java (OpenJDK 21).
+  - Configured for port 5000 (`root/conf.yaml`).
+  - Next: Futubull gateway in `gateways/futubull-gateway/` and live Python connector.
 
 ### Next steps
 1. Real broker connector integrations (IBKR / Futubull).
