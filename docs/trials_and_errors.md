@@ -116,3 +116,33 @@ When the Client Portal Gateway failed, we briefly considered narrowing the scope
 - Maintain CI workflows on `windows-latest`, `macos-latest`, and `ubuntu-latest`.
 - Maintain development runners: `dev.ps1` / `dev.cmd` (Windows) and `dev.sh` (macOS/Linux).
 - Document OS-specific gateway setup instructions under `gateways/`.
+
+---
+
+## Trial 6: The "Insert a Security Key (USB)" Blocker on Windows 10 with iPhone Passkeys
+
+### The Problem
+When logging into standalone **IB Gateway** on Windows, entering credentials triggers a Passkey challenge. The native **Windows Security** modal appears, but strictly displays:
+> *"Making sure it's you: Insert your security key into the USB port."*
+
+The user's IBKR passkey is stored on their **iPhone (iCloud Keychain)**, not on a physical USB hardware token (YubiKey). There is no apparent way to tap the phone, causing an apparent dead end.
+
+### Technical Root Cause Discovered
+1. **Windows 10 vs Windows 11 WebAuthn Discrepancy:**
+   - The user is on **Microsoft Windows 10 Home (Build 19045)**.
+   - Cross-device passkey authentication (using Bluetooth / QR code handoff to an iPhone/Android device via FIDO caBLE) was **only introduced in Windows 11**.
+   - In Windows 10, the OS-level WebAuthn subsystem (`webauthn.dll`) only supports two authenticators:
+     1. Local **Windows Hello** (PIN / Biometrics on this device).
+     2. Physical **USB/NFC FIDO2 hardware tokens** (YubiKeys).
+   - Because Windows 10 has no native cross-device iOS handoff in desktop apps, it defaults to demanding a physical USB security key.
+2. **Embedded JxBrowser Limitations:**
+   - IB Gateway renders its login flow using JxBrowser. Unlike Google Chrome (which implements its own proprietary WebAuthn Bluetooth relay to iPhones), desktop Java/CEF embedded browsers delegate directly to the underlying Windows OS WebAuthn dialog.
+
+### The Solutions
+1. **Solution A (Recommended): Enroll Windows Hello as a Second Passkey:**
+   - Open Chrome or Edge on Windows, log into the IBKR web portal, and go to **Settings > Security > Secure Login System (SLS) > Passkeys**.
+   - Click **"Add a Passkey"** and select **"This Windows device"** (Windows Hello PIN).
+   - Once enrolled, IB Gateway will simply prompt for your Windows PIN on your PC and log in instantly without requiring your iPhone or any USB key.
+2. **Solution B: Fall back to IB Key (IBKR Mobile App 2FA):**
+   - Click **Cancel** on the USB prompt to switch to IB Key (push notification or Challenge-Response code in the IBKR Mobile app on iPhone).
+   - Alternatively, configure IBKR Mobile as the default SLS method in account settings.
