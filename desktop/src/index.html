@@ -29,6 +29,8 @@
           <label for="currency-select" class="currency-label">Currency</label>
           <select id="currency-select" class="currency-dropdown">
             <option value="USD">USD ($)</option>
+            <option value="HKD">HKD (HK$)</option>
+            <option value="EUR">EUR (€)</option>
             <option value="GBP">GBP (£)</option>
           </select>
         </div>
@@ -39,7 +41,7 @@
     <main class="app-container">
       <div id="error-banner" class="banner banner-error" hidden></div>
 
-      <!-- Headline KPIs in British English -->
+      <!-- Headline KPIs -->
       <section class="kpis">
         <div class="kpi-card">
           <div class="kpi-label">NET LIQUIDATION VALUE</div>
@@ -58,6 +60,14 @@
           <div class="kpi-value" id="kpi-pnl">–</div>
           <div class="kpi-sub" id="kpi-pnl-pct"></div>
         </div>
+        <div class="kpi-card">
+          <div class="kpi-label">AVAILABLE FUNDS</div>
+          <div class="kpi-value" id="kpi-avail">–</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">BUYING POWER</div>
+          <div class="kpi-value" id="kpi-buyingpower">–</div>
+        </div>
       </section>
 
       <!-- Accounts Section -->
@@ -71,11 +81,11 @@
         <div id="accounts-grid" class="accounts-grid"></div>
       </section>
 
-      <!-- Holdings & Balances Section (Positions & Cash Balances) -->
+      <!-- Holdings & Balances Section -->
       <section class="panel holdings-panel">
         <div class="panel-header holdings-header">
           <div class="positions-filter-bar">
-            <!-- Account filter buttons (All, IBKR-HK (0728), Futubull-HK (7283)...) -->
+            <!-- Account filter buttons (All, U16110728...) -->
             <div id="account-filter-pills" class="filter-pills"></div>
           </div>
         </div>
@@ -88,7 +98,7 @@
               <span class="positions-count-badge" id="positions-count"></span>
             </div>
             <div class="positions-search-bar">
-              <input id="search" type="search" placeholder="Search symbol or instrument…" />
+              <input id="search" type="search" placeholder="Search symbol, instrument, or type…" />
             </div>
           </div>
 
@@ -98,16 +108,16 @@
                 <tr>
                   <th data-sort="instrument">Instrument</th>
                   <th data-sort="symbol">Symbol</th>
-                  <th data-sort="account_alias">Account</th>
-                  <th data-sort="expiry_date">Expiry Date</th>
-                  <th data-sort="delivery_date">Delivery Date</th>
+                  <th data-sort="sec_type">Type</th>
+                  <th data-sort="exchange">Exch</th>
+                  <th data-sort="last_trade_date">Expiry</th>
                   <th data-sort="position" class="num">Position</th>
-                  <th data-sort="average_price" class="num">Avg Price</th>
-                  <th data-sort="cost_basis" class="num">Cost Basis</th>
+                  <th data-sort="avg_price" class="num">Avg Price</th>
                   <th data-sort="mark_price" class="num">Mark Price</th>
+                  <th data-sort="cost_basis" class="num">Cost Basis</th>
                   <th data-sort="market_value" class="num">Market Value</th>
                   <th data-sort="currency" class="num">Currency</th>
-                  <th data-sort="unrealised_pnl" class="num">Unrealised P&amp;L</th>
+                  <th data-sort="unrealized_pnl" class="num">Unrealised P&amp;L</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -130,9 +140,9 @@
                 <tr>
                   <th>Account</th>
                   <th>Broker</th>
-                  <th>Account Number</th>
                   <th class="num">Currency</th>
-                  <th class="num">Cash Balance</th>
+                  <th class="num">Amount (Raw)</th>
+                  <th class="num">Converted Balance</th>
                 </tr>
               </thead>
               <tbody></tbody>

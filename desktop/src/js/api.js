@@ -38,7 +38,7 @@ export async function apiGet(path) {
   try {
     res = await fetch(base + path);
   } catch (err) {
-    throw new Error(`Cannot reach the uninv backend at ${base}. Is it running?`);
+    throw new Error(`Cannot reach the uninv backend at ${base}. Is it running? (${err.message || err})`);
   }
   if (!res.ok) {
     throw new Error(`Backend returned ${res.status}: ${await res.text()}`);

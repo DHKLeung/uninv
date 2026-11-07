@@ -20,10 +20,10 @@ strategy builder, live prices, etc. (roadmap in `README.md`).
 - `docs/architecture.md`: design decisions and the reasons for them. Update it when a decision
   changes.
 - `docs/trials_and_errors.md`: log of technical trials, dead ends, and why specific approaches failed.
-- `scripts/dev.ps1`: runs backend + desktop app on Windows (`-Browser` for browser UI, `-ServicesOnly` for headless backend).
-- `scripts/dev.cmd`: Windows cmd/PowerShell wrapper (one-click double-clickable launcher).
-- `scripts/dev.sh`: macOS/Linux equivalent for bash/zsh (`--browser`, `--services-only`).
-- `scripts/start-services.cmd`: one-click launcher for backend in headless mode.
+- `scripts/start-all.ps1`: orchestrates running backend + desktop app together on Windows (`-Browser` for browser UI; one-click `scripts/start-all.cmd`).
+- `scripts/start-backend.ps1`: runs backend only on Windows (`scripts/start-backend.cmd`).
+- `scripts/start-desktop.ps1`: runs desktop app on Windows (`-Browser` for browser UI; `scripts/start-desktop.cmd`).
+- `scripts/start-all.sh`, `scripts/start-backend.sh`, `scripts/start-desktop.sh`: macOS/Linux equivalents for bash/zsh.
 
 Data flow: UI → `invoke("api_get", {path})` → Rust proxy → `http://<host>:8000/api/v1/...` →
 FastAPI.
@@ -70,18 +70,19 @@ cd backend; uv sync                         # install deps
 cd backend; uv run uninv-backend --reload   # API :8000, docs at /docs
 cd backend; uv run pytest                   # tests (must pass before commit)
 cd backend; uv run ruff format .; uv run ruff check --fix .
-.\scripts\dev.ps1                           # one-click: backend + desktop app (or .\scripts\dev.cmd)
-.\scripts\dev.ps1 -Browser                  # one-click: backend + UI at http://127.0.0.1:1420
-.\scripts\start-services.cmd                # one-click: backend only (headless)
+.\scripts\start-all.ps1                     # one-click: backend + desktop app (or .\scripts\start-all.cmd)
+.\scripts\start-all.ps1 -Browser            # one-click: backend + UI in browser (127.0.0.1:1420)
+.\scripts\start-backend.ps1                 # backend only (or .\scripts\start-backend.cmd)
+.\scripts\start-desktop.ps1                 # desktop only (or .\scripts\start-desktop.cmd)
 cd desktop\src-tauri; cargo tauri dev       # or `cargo run` (backend must be running)
-cd desktop\src-tauri; cargo tauri build     # installer
+cd desktop\src-tauri; cargo tauri build     # production installer (.msi / .exe)
 ```
 
 **Agent shell quirk:** each command runs in a fresh shell that may not have uv/cargo on PATH.
 Prefix with
 `$env:Path = "$env:USERPROFILE\.local\bin;$env:USERPROFILE\.cargo\bin;$env:Path";`.
 
-**UI check without a GUI:** serve `desktop/src` on :1420 (see `dev.ps1 -Browser`) with the
+**UI check without a GUI:** serve `desktop/src` on :1420 (see `start-all.ps1 -Browser`) with the
 backend running, then
 `msedge --headless=new --window-size=1400,1500 --virtual-time-budget=5000 --screenshot=<png> http://127.0.0.1:1420/`
 (Edge is at `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`).
@@ -115,12 +116,18 @@ _Last updated: 2026-11-07_
     - Account-wide totals (non-BASE, explicit currency): `available_funds`, `buying_power`, `cash_balance`, `cash_balances` (multi-currency list), `equity_with_loan_value`, `excess_liquidity`, `gross_position_value`, `init_margin_req`, `maint_margin_req`, `net_liquidation`, `unrealized_pnl`.
   - `IBKRService` in `backend/src/uninv_backend/ibkr.py` connects directly to TWS on port 7496 with `readonly=True` (connects in ~0.1s), thread-safe querying via `threading.Lock`, and in-memory contract name/FX caching.
   - All 18 backend tests pass, Ruff check passes, Tauri `cargo check` passes.
-- ⏸️ Desktop GUI temporarily stale (awaiting complete redesign to match new backend data contract).
+- ✅ Desktop GUI updated and verified working:
+  - Consumes `/api/v1/snapshot`, `/api/v1/supporting-brokers`, `/api/v1/accounts`, `/api/v1/fx`.
+  - Renders headline KPIs, multi-account pills, precision derivative instrument badges, sortable table, and multi-currency cash balances.
+  - Live verified with headless Edge CDP screenshot rendering live TWS data.
+- ✅ Clean scripts in `scripts/`:
+  - `start-all` (`.ps1`, `.cmd`, `.sh`): launches backend + desktop app together with clean shutdown on exit.
+  - `start-backend` (`.ps1`, `.cmd`, `.sh`): launches FastAPI server only.
+  - `start-desktop` (`.ps1`, `.cmd`, `.sh`): launches Tauri desktop app (or `-Browser` mode).
 - ✅ Standalone Broker Daemon Architecture:
   - TWS verified and connected via socket API on port 7496.
   - Cross-platform runners and setup guides documented in `gateways/ib_gateway/instruction.md` and `docs/trials_and_errors.md`.
 
 ### Next steps
-1. Plan and implement new frontend GUI redesign to consume the new `/api/v1/` endpoints.
+1. Future GUI redesign per user specifications.
 2. Futubull integration via `futu-api` (Futu OpenD).
-3. Live market data and live FX rate pulling.

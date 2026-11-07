@@ -10,8 +10,9 @@ any Rust change in plain terms.
     to `fetch("http://127.0.0.1:8000"+path)` in a normal browser. **All backend calls go
     through it.**
   - `js/format.js`: money / pct / qty formatting and `esc()` for HTML escaping.
-  - `js/main.js`: loads `/api/v1/portfolio` once, keeps `state`, and renders. Filtering and
-    sorting happen in the browser.
+  - `js/main.js`: consumes `/api/v1/supporting-brokers`, `/api/v1/accounts`, `/api/v1/snapshot`,
+    and `/api/v1/fx`. Keeps reactive `state`, renders headline KPIs, account cards, filter pills,
+    positions table, and multi-currency cash balances. Filtering and sorting happen in the browser.
 - `src-tauri/`: Rust shell.
   - `src/lib.rs`: `Backend` state (reqwest client and base URL from `UNINV_BACKEND_URL` / `RwLock`);
     commands `api_get` (generic GET proxy, only `/api/*` and `/health` allowed), `backend_url`,

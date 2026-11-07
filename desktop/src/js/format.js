@@ -1,26 +1,45 @@
 /**
- * Number and currency formatting helpers.
- *
- * Supports USD ($) and GBP (£) with a fixed FX rate of 0.7487.
+ * Number and currency formatting helpers with dynamic FX rate support.
  */
 
-const FX_RATES = {
+export const FX_RATES = {
   USD: 1.0,
-  GBP: 0.7487,
+  HKD: 7.8413,
+  EUR: 0.8913,
+  GBP: 0.7435,
 };
 
 const CURRENCY_SYMBOLS = {
   USD: "$",
+  HKD: "HK$",
+  EUR: "€",
   GBP: "£",
+  JPY: "¥",
+  CAD: "CA$",
+  AUD: "A$",
+  CHF: "CHF ",
+  CNH: "CN¥",
+  SGD: "S$",
 };
+
+/**
+ * Update dynamic FX rate against USD base.
+ */
+export function setFxRate(currency, rate) {
+  if (currency && typeof rate === "number" && rate > 0) {
+    FX_RATES[currency] = rate;
+  }
+}
 
 /**
  * Format a USD-based numeric value into the active display currency.
  */
-export function formatMoney(valInUsd, currency = "USD", { compact = false } = {}) {
-  if (valInUsd === null || valInUsd === undefined) return '<span class="muted">—</span>';
+export function formatMoney(valInUsd, currency = "USD") {
+  if (valInUsd === null || valInUsd === undefined || Number.isNaN(valInUsd)) {
+    return '<span class="muted">—</span>';
+  }
   const rate = FX_RATES[currency] ?? 1.0;
-  const sym = CURRENCY_SYMBOLS[currency] ?? "$";
+  const sym = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
   const converted = valInUsd * rate;
   const absVal = Math.abs(converted);
 
@@ -37,9 +56,11 @@ export function formatMoney(valInUsd, currency = "USD", { compact = false } = {}
  * Format signed money (+ or -) with symbol.
  */
 export function formatSignedMoney(valInUsd, currency = "USD") {
-  if (valInUsd === null || valInUsd === undefined) return '<span class="muted">—</span>';
+  if (valInUsd === null || valInUsd === undefined || Number.isNaN(valInUsd)) {
+    return '<span class="muted">—</span>';
+  }
   const rate = FX_RATES[currency] ?? 1.0;
-  const sym = CURRENCY_SYMBOLS[currency] ?? "$";
+  const sym = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
   const converted = valInUsd * rate;
   const absVal = Math.abs(converted);
 
@@ -57,7 +78,9 @@ export function formatSignedMoney(valInUsd, currency = "USD") {
  * Format percentage.
  */
 export function formatPct(fraction, { signed = true, digits = 2 } = {}) {
-  if (fraction === null || fraction === undefined) return '<span class="muted">—</span>';
+  if (fraction === null || fraction === undefined || Number.isNaN(fraction)) {
+    return '<span class="muted">—</span>';
+  }
   const pctVal = fraction * 100;
   const absStr = Math.abs(pctVal).toFixed(digits) + "%";
   if (signed) {
@@ -71,7 +94,9 @@ export function formatPct(fraction, { signed = true, digits = 2 } = {}) {
  * Format quantity.
  */
 export function formatQty(value) {
-  if (value === null || value === undefined) return '<span class="muted">—</span>';
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return '<span class="muted">—</span>';
+  }
   return value.toLocaleString("en-GB", { maximumFractionDigits: 4 });
 }
 
@@ -79,7 +104,7 @@ export function formatQty(value) {
  * Return CSS class for positive / negative P&L.
  */
 export function pnlClass(value) {
-  if (value === null || value === undefined) return "";
+  if (value === null || value === undefined || Number.isNaN(value)) return "";
   if (value > 0.004) return "pos";
   if (value < -0.004) return "neg";
   return "";

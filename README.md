@@ -4,9 +4,10 @@ uninv is a desktop app that puts all your broker accounts into **one portfolio v
 positions, allocation and P&L from every broker show up together, converted into one base
 currency, and you can organise positions into your own **groups** that span brokers.
 
-> **Status: early development.** No real brokers are connected yet. The backend returns
-> **simulated** positions for Interactive Brokers, Futu and Charles Schwab, so the UI and
-> aggregation can be built first. The app shows a "Simulated data" badge while that's the case.
+> **Status:** Interactive Brokers (TWS / IB Gateway) is connected natively via socket API
+> on port 7496. Unified portfolio snapshot endpoint combines account-wide margin/cash totals,
+> normalized holdings across stocks, options, and futures options, and live FX exchange rates.
+> Futubull integration via Futu OpenD is next.
 
 Planned later: an option strategy builder, live prices, editable groups, and more (see the
 [Roadmap](#roadmap)).
@@ -58,8 +59,13 @@ uninv/
 │   ├── src/                    # frontend: index.html, styles.css, js/
 │   ├── src-tauri/              # Rust: Cargo.toml, tauri.conf.json, src/lib.rs
 │   └── app-icon.png            # source image for app icons
-├── docs/                       # design notes
-├── scripts/dev.ps1             # run everything in dev mode
+├── docs/                       # architecture decisions and technical trials
+├── gateways/                   # guides and scripts for broker daemons (IB Gateway, Futu OpenD)
+├── scripts/
+│   ├── start-all.cmd / .ps1    # one-click launcher for backend + desktop app
+│   ├── start-backend.cmd / .ps1# launcher for backend only (:8000)
+│   ├── start-desktop.cmd / .ps1# launcher for desktop only
+│   └── *.sh                    # macOS / Linux equivalents
 └── AGENTS.md                   # instructions + project status for AI coding agents
                                 # (nested ones in backend/ and desktop/)
 ```
@@ -85,15 +91,16 @@ uv sync
 cd ..
 
 # 2. Run backend + desktop app together (Ctrl+C stops both)
-.\scripts\dev.ps1       # or .\scripts\dev.cmd if PowerShell execution policy blocks .ps1
+.\scripts\start-all.ps1       # or double-click .\scripts\start-all.cmd
 ```
 
 The first desktop build compiles the Rust dependencies and takes a few minutes. Later builds
 are quick.
 
-**Only working on the backend or UI?** Use `.\scripts\dev.ps1 -Browser` instead. It starts the
-backend and opens the UI in your web browser at <http://127.0.0.1:1420>, with no Rust build
-needed. Refresh the page after editing files in `desktop/src`.
+**Only working on the backend or UI?**
+- Run `.\scripts\start-all.ps1 -Browser` to run backend + web UI at <http://127.0.0.1:1420> with no Rust build needed.
+- Or run `.\scripts\start-backend.ps1` to run the backend alone at <http://127.0.0.1:8000/docs>.
+- Or run `.\scripts\start-desktop.ps1` to run the desktop app alone.
 
 ### Running pieces manually
 
@@ -105,7 +112,7 @@ uv run ruff check . ; uv run ruff format .
 
 # Desktop (from desktop/src-tauri/, with the backend running)
 cargo tauri dev                        # or: cargo run
-cargo tauri build                      # produce an installer in target/release/bundle
+cargo tauri build                      # produce a production installer (.msi / .exe)
 ```
 
 Settings use environment variables: `UNINV_PORT`, `UNINV_BASE_CURRENCY` (backend; see
@@ -118,10 +125,10 @@ Interactive docs: <http://127.0.0.1:8000/docs> (while the backend is running).
 | Method | Path | Returns |
 |---|---|---|
 | GET | `/health` | Liveness check |
-| GET | `/api/v1/brokers` | Connected brokers (`ibkr-hk`, `futubull-hk`) |
-| GET | `/api/v1/accounts/{broker_id}` | Accounts metadata under broker (e.g. `IBKR-HK (0728)`, `Futubull-HK (7283)`) |
-| GET | `/api/v1/cash-balance/{broker_id}?account_id=` | Account cash balance (e.g. -6,612.62 USD for IBKR-HK) |
-| GET | `/api/v1/positions/{broker_id}?account_id=` | Broker positions (stocks, ETFs, futures, options, futures options) |
+| GET | `/api/v1/supporting-brokers` | Supported brokers list (`[{"id": "ibkr", "name": "Interactive Brokers"}]`) |
+| GET | `/api/v1/accounts?broker_id=ibkr` | Accounts under broker (`{"broker_id": "ibkr", "asof": "...", "accounts": ["U16110728"]}`) |
+| GET | `/api/v1/snapshot?broker_id=ibkr&account_id=U16110728` | Unified snapshot: account-wide values (`AccountValues`), positions (`Position` list), UTC timestamp |
+| GET | `/api/v1/fx?base=EUR&quote=USD` | Live FX exchange rate with UTC timestamp (`{"base": "EUR", "quote": "USD", "rate": 1.0825, "asof": "..."}`) |
 
 ## Common tasks
 
