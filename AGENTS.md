@@ -98,15 +98,15 @@ _Last updated: 2026-11-06_
   - Brokers: `Interactive Brokers (Hong Kong)` (`ibkr-hk`) and `Futubull (Hong Kong)` (`futubull-hk`).
   - Accounts metadata: `IBKR-HK (0728)`, `Futubull-HK (7283)`, `Futubull-HK (7612)`, `Futubull-HK (0281)`.
   - Positions: mock data across stocks, ETFs, futures (with delivery date), stock options (with expiry date), futures options (with expiry date), and Bitcoin (all in USD). Raw broker fields only; derived metrics (market value, cost basis, unrealised P&L) computed in frontend.
-  - Clean endpoints: `GET /api/v1/brokers`, `GET /api/v1/accounts/{broker_id}`, `GET /api/v1/positions/{broker_id}`.
-  - All 10 backend tests pass, Ruff check passes.
+  - Clean endpoints: `GET /api/v1/brokers`, `GET /api/v1/accounts/{broker_id}`, `GET /api/v1/cash-balance/{broker_id}`, `GET /api/v1/positions/{broker_id}`.
+  - All 11 backend tests pass, Ruff check passes.
 - ✅ GUI Application updated:
   - Configured for 16:9 1600×900 default display layout (`tauri.conf.json` and responsive CSS).
   - Navigation tab header with `Portfolio` active tab.
-  - British English KPI cards: `NET LIQUIDATION VALUE`, `POSITIONS VALUE`, `CASH BALANCE`, `UNREALISED P&L` (with % and no "on cost").
+  - British English KPI cards: `NET LIQUIDATION VALUE`, `MARKET VALUE`, `CASH BALANCE`, `UNREALISED P&L` (with % and no "on cost").
   - Top right: As-of timestamp, currency selector (USD `$` and GBP `£` at 0.7487 FX rate), refresh button.
   - Accounts section: Account cards with balances, unrealised P&L, and quick-filter click support.
-  - Positions section: Account filter pills (`All`, `IBKR-HK (0728)`, etc.), search box, and 11-column table (with Expiry Date and Delivery Date).
+  - Positions section: Account filter pills (`All`, `IBKR-HK (0728)`, etc.), search box, and 12-column table (with Expiry Date, Delivery Date, Cost Basis, and Market Value).
   - Removed obsolete simulated badge, allocation panels, and groups.
 - ✅ Rust shell compiles cleanly (`cargo check`).
 

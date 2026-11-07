@@ -1,6 +1,6 @@
 """Shared data models for uninv.
 
-Professional Pydantic v2 data models for brokers, accounts, and positions.
+Professional Pydantic v2 data models for brokers, accounts, cash balances, and positions.
 """
 
 from pydantic import BaseModel, Field
@@ -19,6 +19,15 @@ class AccountMetadata(BaseModel):
     account_id: str = Field(description="Broker account number, e.g. 'U16110728'")
     broker_id: str = Field(description="Broker identifier, e.g. 'ibkr-hk'")
     alias: str = Field(description="Display alias, e.g. 'IBKR-HK (0728)'")
+
+
+class CashBalance(BaseModel):
+    """Cash balance for a specific broker account."""
+
+    broker_id: str = Field(description="Broker identifier, e.g. 'ibkr-hk'")
+    account_id: str = Field(description="Broker account number, e.g. 'U16110728'")
+    cash_balance: float = Field(description="Cash balance in currency")
+    currency: str = Field(default="USD", description="Currency of cash balance")
 
 
 class Position(BaseModel):

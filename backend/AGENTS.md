@@ -3,11 +3,12 @@
 Rules for `backend/`. Root `AGENTS.md` applies too.
 
 ## Layout
-- `src/uninv_backend/models.py`: Pydantic models, **the API contract**. Defines `Broker`, `AccountMetadata`, and `Position`.
-- `src/uninv_backend/data.py`: Central data store holding broker accounts and positions across stocks, ETFs, futures, options, and futures options.
+- `src/uninv_backend/models.py`: Pydantic models, **the API contract**. Defines `Broker`, `AccountMetadata`, `CashBalance`, and `Position`.
+- `src/uninv_backend/data.py`: Central data store holding broker accounts, cash balances, and positions.
 - `src/uninv_backend/api/routes.py`: `/api/v1` routes:
   - `GET /api/v1/brokers`
   - `GET /api/v1/accounts/{broker_id}`
+  - `GET /api/v1/cash-balance/{broker_id}` (supports `?account_id=...`)
   - `GET /api/v1/positions/{broker_id}` (supports `?account_id=...`)
 - `config.py`: `Settings` (env prefix `UNINV_`).
 - `app.py`: FastAPI app initialization and CORS setup.

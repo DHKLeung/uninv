@@ -12,11 +12,11 @@ const $ = (sel) => document.querySelector(sel);
 const state = {
   brokers: [],
   accounts: [], // [{ account_id, broker_id, alias, broker_name }]
+  cashBalances: {}, // { [account_id]: cash_balance_usd }
   positions: [],
-  selectedAccount: "", // empty for "All", or account_id / alias
+  selectedAccount: "", // empty for "All", or account_id
   search: "",
   currency: "USD",
-  cashBalanceUsd: 150000.0, // USD cash balance
   lastUpdated: null,
   sort: { key: "market_value", dir: -1 },
 };
@@ -48,7 +48,15 @@ async function load() {
 
     const accountAliasMap = Object.fromEntries(allAccounts.map((a) => [a.account_id, a.alias]));
 
-    // 3. Fetch positions for each broker concurrently
+    // 3. Fetch cash balances for each broker concurrently
+    const cashPromises = brokers.map((b) => apiGet(`/api/v1/cash-balance/${b.id}`));
+    const cashNested = await Promise.all(cashPromises);
+    const allCash = cashNested.flat();
+    state.cashBalances = Object.fromEntries(
+      allCash.map((c) => [c.account_id, c.cash_balance])
+    );
+
+    // 4. Fetch positions for each broker concurrently
     const positionPromises = brokers.map((b) => apiGet(`/api/v1/positions/${b.id}`));
     const positionsNested = await Promise.all(positionPromises);
 
@@ -123,17 +131,26 @@ function renderHeader() {
 
 function renderKpis() {
   const ccy = state.currency;
-  const positionsValUsd = state.positions.reduce((acc, p) => acc + p.market_value, 0);
-  const cashValUsd = state.cashBalanceUsd;
-  const netLiqUsd = positionsValUsd + cashValUsd;
 
-  const totalCostBasis = state.positions.reduce((acc, p) => acc + p.cost_basis, 0);
-  const totalUnrealisedPnlUsd = state.positions.reduce((acc, p) => acc + p.unrealised_pnl, 0);
+  const filteredPositions = !state.selectedAccount
+    ? state.positions
+    : state.positions.filter((p) => p.account_id === state.selectedAccount);
+
+  const marketValUsd = filteredPositions.reduce((acc, p) => acc + p.market_value, 0);
+
+  const cashValUsd = state.selectedAccount
+    ? (state.cashBalances[state.selectedAccount] ?? 0.0)
+    : Object.values(state.cashBalances).reduce((acc, val) => acc + val, 0);
+
+  const netLiqUsd = marketValUsd + cashValUsd;
+
+  const totalCostBasis = filteredPositions.reduce((acc, p) => acc + p.cost_basis, 0);
+  const totalUnrealisedPnlUsd = filteredPositions.reduce((acc, p) => acc + p.unrealised_pnl, 0);
   const totalPnlPct = totalCostBasis !== 0 ? totalUnrealisedPnlUsd / Math.abs(totalCostBasis) : 0;
 
   // British English KPI displays
   $("#kpi-netliq").textContent = formatMoney(netLiqUsd, ccy);
-  $("#kpi-positions").textContent = formatMoney(positionsValUsd, ccy);
+  $("#kpi-positions").textContent = formatMoney(marketValUsd, ccy);
   $("#kpi-cash").textContent = formatMoney(cashValUsd, ccy);
 
   const pnlEl = $("#kpi-pnl");
@@ -168,7 +185,7 @@ function renderAccounts() {
         <div class="account-number muted">${esc(acct.account_id)} · ${acctPositions.length} positions</div>
         <div class="account-metrics">
           <div>
-            <div class="metric-label">Positions Value</div>
+            <div class="metric-label">Market Value</div>
             <div class="metric-value">${formatMoney(acctValUsd, ccy)}</div>
           </div>
           <div class="text-right">
@@ -189,6 +206,7 @@ function renderAccounts() {
       state.selectedAccount = state.selectedAccount === id ? "" : id;
       renderFilterPills();
       renderAccounts();
+      renderKpis();
       renderPositions();
     });
   }
@@ -217,6 +235,7 @@ function renderFilterPills() {
       state.selectedAccount = btn.dataset.filter;
       renderFilterPills();
       renderAccounts();
+      renderKpis();
       renderPositions();
     });
   }
@@ -277,9 +296,10 @@ function renderPositions() {
             <td>${delivery}</td>
             <td class="num font-mono">${formatQty(p.position)}</td>
             <td class="num font-mono">${formatMoney(p.average_price, ccy)}</td>
+            <td class="num font-mono">${formatMoney(p.cost_basis, ccy)}</td>
             <td class="num font-mono">${formatMoney(p.mark_price, ccy)}</td>
-            <td class="num"><span class="currency-badge">${esc(p.currency)}</span></td>
             <td class="num font-mono strong">${formatMoney(p.market_value, ccy)}</td>
+            <td class="num"><span class="currency-badge">${esc(p.currency)}</span></td>
             <td class="num font-mono ${pnlClass(p.unrealised_pnl)}">
               <div>${formatSignedMoney(p.unrealised_pnl, ccy)}</div>
               <div class="small-pct">${formatPct(p.unrealised_pnl_pct, { signed: true })}</div>
@@ -287,7 +307,7 @@ function renderPositions() {
           </tr>`;
         })
         .join("")
-    : `<tr><td colspan="11" class="empty muted">No positions match the current account or search filter.</td></tr>`;
+    : `<tr><td colspan="12" class="empty muted">No positions match the current account or search filter.</td></tr>`;
 }
 
 // ---------------------------------------------------------------------------------------

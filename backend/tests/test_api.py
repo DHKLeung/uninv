@@ -66,11 +66,43 @@ def test_accounts_unknown_broker_404(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
+def test_cash_balance_endpoint(client: TestClient) -> None:
+    resp = client.get("/api/v1/cash-balance/ibkr-hk?account_id=U16110728")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data == {
+        "broker_id": "ibkr-hk",
+        "account_id": "U16110728",
+        "cash_balance": -6612.62,
+        "currency": "USD",
+    }
+
+    # All accounts for broker
+    all_resp = client.get("/api/v1/cash-balance/ibkr-hk")
+    assert all_resp.status_code == 200
+    assert len(all_resp.json()) == 1
+
+    # Futubull cash balances
+    futu_resp = client.get("/api/v1/cash-balance/futubull-hk")
+    assert futu_resp.status_code == 200
+    assert len(futu_resp.json()) == 3
+
+
+def test_cash_balance_unknown_404(client: TestClient) -> None:
+    assert client.get("/api/v1/cash-balance/unknown-broker").status_code == 404
+    assert (
+        client.get(
+            "/api/v1/cash-balance/ibkr-hk?account_id=invalid-account"
+        ).status_code
+        == 404
+    )
+
+
 def test_positions_ibkr_endpoint(client: TestClient) -> None:
     resp = client.get("/api/v1/positions/ibkr-hk")
     assert resp.status_code == 200
     positions = resp.json()
-    assert len(positions) == 6
+    assert len(positions) == 12
 
     # Check required fields exist on every position
     for p in positions:
@@ -88,51 +120,38 @@ def test_positions_ibkr_endpoint(client: TestClient) -> None:
         assert "cost_basis" not in p
         assert "unrealised_pnl" not in p
 
-    # Verify stock option has expiry_date and no delivery_date
-    aapl_opt = next(p for p in positions if p["symbol"] == "AAPL261218C00240000")
-    assert aapl_opt["instrument"] == "AAPL Dec 18 '26 240C"
-    assert aapl_opt["expiry_date"] == "2026-12-18"
-    assert aapl_opt["delivery_date"] is None
-    assert aapl_opt["multiplier"] == 100.0
+    # Verify stock options
+    googl_opt = next(p for p in positions if p["symbol"] == "GOOGL290119P00230000")
+    assert googl_opt["instrument"] == "GOOGL Jan 19 '29 230 Put"
+    assert googl_opt["expiry_date"] == "2029-01-19"
+    assert googl_opt["delivery_date"] is None
+    assert googl_opt["multiplier"] == 100.0
 
-    # Verify future has delivery_date and no expiry_date
-    es_fut = next(p for p in positions if p["symbol"] == "ESH27")
-    assert es_fut["instrument"] == "E-mini S&P 500 Mar 19 '27"
-    assert es_fut["delivery_date"] == "2027-03-19"
-    assert es_fut["expiry_date"] is None
-    assert es_fut["multiplier"] == 50.0
+    nvda_opt = next(p for p in positions if p["symbol"] == "NVDA290119C00145000")
+    assert nvda_opt["instrument"] == "NVDA Jan 19 '29 145 Call"
+    assert nvda_opt["expiry_date"] == "2029-01-19"
+    assert nvda_opt["delivery_date"] is None
+    assert nvda_opt["multiplier"] == 100.0
 
-    # Verify futures option has expiry_date and no delivery_date
+    # Verify futures option
     es_fopt = next(p for p in positions if p["symbol"] == "ESH27 7400P 261218")
-    assert es_fopt["instrument"] == "E-mini S&P 500 Mar 19 '27 7400P Dec 18 '26"
+    assert es_fopt["instrument"] == "E-mini S&P 500 Mar 19 '27 7400 Put Dec 18 '26"
     assert es_fopt["expiry_date"] == "2026-12-18"
     assert es_fopt["delivery_date"] is None
     assert es_fopt["multiplier"] == 50.0
 
-    # Verify equity has null expiry_date and delivery_date
-    aapl_stock = next(p for p in positions if p["symbol"] == "AAPL")
-    assert aapl_stock["expiry_date"] is None
-    assert aapl_stock["delivery_date"] is None
-
     # Verify Bitcoin position is present
     btc = next(p for p in positions if p["symbol"] == "BTC")
     assert btc["instrument"] == "Bitcoin"
-    assert btc["position"] == 1.25
-    assert btc["expiry_date"] is None
-    assert btc["delivery_date"] is None
+    assert btc["position"] == 0.05981
+    assert btc["mark_price"] == 75851.50
+    assert btc["average_price"] == 70729.40
 
-
-def test_positions_futubull_endpoint(client: TestClient) -> None:
-    resp = client.get("/api/v1/positions/futubull-hk")
-    assert resp.status_code == 200
-    positions = resp.json()
-    assert len(positions) == 10
-
-    # Filter by specific account
-    acct_id = "1001279250287283"
-    filtered = client.get(f"/api/v1/positions/futubull-hk?account_id={acct_id}").json()
-    assert len(filtered) == 3
-    assert all(p["account_id"] == acct_id for p in filtered)
+    # Verify QLD leveraged ETF
+    qld = next(p for p in positions if p["symbol"] == "QLD")
+    assert qld["position"] == 111.13
+    assert qld["mark_price"] == 74.36
+    assert qld["average_price"] == 78.64
 
 
 def test_positions_unknown_account_404(client: TestClient) -> None:

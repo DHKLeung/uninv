@@ -1,6 +1,6 @@
-"""Broker accounts and positions data store."""
+"""Broker accounts, cash balances, and positions data store."""
 
-from uninv_backend.models import AccountMetadata, Broker, Position
+from uninv_backend.models import AccountMetadata, Broker, CashBalance, Position
 
 BROKERS: list[Broker] = [
     Broker(id="ibkr-hk", name="Interactive Brokers (Hong Kong)"),
@@ -34,239 +34,208 @@ ACCOUNTS: dict[str, list[AccountMetadata]] = {
     ],
 }
 
-# Rich set of mock positions across Stocks, ETFs, Futures, Options,
-# Futures Options, and Bitcoin (all USD)
-POSITIONS: dict[str, list[Position]] = {
+CASH_BALANCES: dict[str, list[CashBalance]] = {
     "ibkr-hk": [
-        # Stock: Apple Inc.
-        Position(
-            account_id="U16110728",
+        CashBalance(
             broker_id="ibkr-hk",
-            instrument="Apple Inc.",
-            symbol="AAPL",
-            position=150.0,
-            average_price=215.40,
-            mark_price=228.50,
-            currency="USD",
-            expiry_date=None,
-            delivery_date=None,
-            multiplier=1.0,
-        ),
-        # Stock: NVIDIA Corp.
-        Position(
             account_id="U16110728",
-            broker_id="ibkr-hk",
-            instrument="NVIDIA Corporation",
-            symbol="NVDA",
-            position=80.0,
-            average_price=118.20,
-            mark_price=135.60,
+            cash_balance=-6612.62,
             currency="USD",
-            expiry_date=None,
-            delivery_date=None,
-            multiplier=1.0,
-        ),
-        # Futures: E-mini S&P 500 Mar 19 '27 (has delivery_date, no expiry_date, multiplier = 50)
-        Position(
-            account_id="U16110728",
-            broker_id="ibkr-hk",
-            instrument="E-mini S&P 500 Mar 19 '27",
-            symbol="ESH27",
-            position=2.0,
-            average_price=5850.00,
-            mark_price=5925.00,
-            currency="USD",
-            expiry_date=None,
-            delivery_date="2027-03-19",
-            multiplier=50.0,
-        ),
-        # Stock Option: AAPL Dec 18 '26 240C (has expiry_date, no delivery_date, multiplier = 100)
-        Position(
-            account_id="U16110728",
-            broker_id="ibkr-hk",
-            instrument="AAPL Dec 18 '26 240C",
-            symbol="AAPL261218C00240000",
-            position=5.0,
-            average_price=14.50,
-            mark_price=18.20,
-            currency="USD",
-            expiry_date="2026-12-18",
-            delivery_date=None,
-            multiplier=100.0,
-        ),
-        # Futures Option: E-mini S&P 500 Mar 19 '27 7400P Dec 18 '26
-        # (has expiry_date, no delivery_date, multiplier = 50)
-        Position(
-            account_id="U16110728",
-            broker_id="ibkr-hk",
-            instrument="E-mini S&P 500 Mar 19 '27 7400P Dec 18 '26",
-            symbol="ESH27 7400P 261218",
-            position=2.0,
-            average_price=85.00,
-            mark_price=92.50,
-            currency="USD",
-            expiry_date="2026-12-18",
-            delivery_date=None,
-            multiplier=50.0,
-        ),
-        # Crypto: Bitcoin
-        Position(
-            account_id="U16110728",
-            broker_id="ibkr-hk",
-            instrument="Bitcoin",
-            symbol="BTC",
-            position=1.25,
-            average_price=68500.00,
-            mark_price=71200.00,
-            currency="USD",
-            expiry_date=None,
-            delivery_date=None,
-            multiplier=1.0,
         ),
     ],
     "futubull-hk": [
-        # Account 1: 1001279250287283 -> Futubull-HK (7283)
-        # ETF: Invesco QQQ Trust
-        Position(
+        CashBalance(
+            broker_id="futubull-hk",
             account_id="1001279250287283",
-            broker_id="futubull-hk",
-            instrument="Invesco QQQ Trust Series 1",
-            symbol="QQQ",
-            position=200.0,
-            average_price=470.00,
-            mark_price=495.20,
+            cash_balance=0.0,
             currency="USD",
-            expiry_date=None,
-            delivery_date=None,
-            multiplier=1.0,
         ),
-        # Stock: Microsoft Corp.
-        Position(
-            account_id="1001279250287283",
+        CashBalance(
             broker_id="futubull-hk",
-            instrument="Microsoft Corporation",
-            symbol="MSFT",
-            position=100.0,
-            average_price=410.50,
-            mark_price=425.00,
-            currency="USD",
-            expiry_date=None,
-            delivery_date=None,
-            multiplier=1.0,
-        ),
-        # Stock Option: QQQ Dec 18 '26 460P (short 2 contracts, multiplier = 100)
-        Position(
-            account_id="1001279250287283",
-            broker_id="futubull-hk",
-            instrument="QQQ Dec 18 '26 460P",
-            symbol="QQQ261218P00460000",
-            position=-2.0,
-            average_price=12.00,
-            mark_price=9.80,
-            currency="USD",
-            expiry_date="2026-12-18",
-            delivery_date=None,
-            multiplier=100.0,
-        ),
-        # Account 2: 1001281798927612 -> Futubull-HK (7612)
-        # ETF: SPDR S&P 500 ETF Trust
-        Position(
             account_id="1001281798927612",
+            cash_balance=0.0,
+            currency="USD",
+        ),
+        CashBalance(
             broker_id="futubull-hk",
-            instrument="SPDR S&P 500 ETF Trust",
-            symbol="SPY",
-            position=120.0,
-            average_price=565.00,
-            mark_price=585.40,
+            account_id="1001272756530281",
+            cash_balance=0.0,
+            currency="USD",
+        ),
+    ],
+}
+
+# User-specified positions in IBKR-HK (U16110728)
+POSITIONS: dict[str, list[Position]] = {
+    "ibkr-hk": [
+        # 1. BOXX: 463 pos, 118.95 mark, 115.58 avg
+        Position(
+            account_id="U16110728",
+            broker_id="ibkr-hk",
+            instrument="Alpha Architect 1-3 Month Box ETF",
+            symbol="BOXX",
+            position=463.0,
+            average_price=115.58,
+            mark_price=118.95,
             currency="USD",
             expiry_date=None,
             delivery_date=None,
             multiplier=1.0,
         ),
-        # Stock: Alphabet Inc.
+        # 2. BTC: 0.05981 pos, 75851.50 mark, 70729.40 avg
         Position(
-            account_id="1001281798927612",
-            broker_id="futubull-hk",
-            instrument="Alphabet Inc. Class A",
-            symbol="GOOGL",
-            position=75.0,
-            average_price=162.00,
-            mark_price=178.50,
-            currency="USD",
-            expiry_date=None,
-            delivery_date=None,
-            multiplier=1.0,
-        ),
-        # Futures: E-mini Nasdaq 100 Mar 19 '27 (has delivery_date, no expiry_date, multiplier = 20)
-        Position(
-            account_id="1001281798927612",
-            broker_id="futubull-hk",
-            instrument="E-mini Nasdaq 100 Mar 19 '27",
-            symbol="NQH27",
-            position=1.0,
-            average_price=20400.00,
-            mark_price=20750.00,
-            currency="USD",
-            expiry_date=None,
-            delivery_date="2027-03-19",
-            multiplier=20.0,
-        ),
-        # Account 3: 1001272756530281 -> Futubull-HK (0281)
-        # Stock: Amazon.com Inc.
-        Position(
-            account_id="1001272756530281",
-            broker_id="futubull-hk",
-            instrument="Amazon.com Inc.",
-            symbol="AMZN",
-            position=90.0,
-            average_price=185.00,
-            mark_price=198.40,
-            currency="USD",
-            expiry_date=None,
-            delivery_date=None,
-            multiplier=1.0,
-        ),
-        # Stock: Tesla Inc.
-        Position(
-            account_id="1001272756530281",
-            broker_id="futubull-hk",
-            instrument="Tesla Inc.",
-            symbol="TSLA",
-            position=60.0,
-            average_price=240.00,
-            mark_price=265.50,
-            currency="USD",
-            expiry_date=None,
-            delivery_date=None,
-            multiplier=1.0,
-        ),
-        # Stock Option: TSLA Dec 18 '26 280C (multiplier = 100)
-        Position(
-            account_id="1001272756530281",
-            broker_id="futubull-hk",
-            instrument="TSLA Dec 18 '26 280C",
-            symbol="TSLA261218C00280000",
-            position=3.0,
-            average_price=22.00,
-            mark_price=27.50,
-            currency="USD",
-            expiry_date="2026-12-18",
-            delivery_date=None,
-            multiplier=100.0,
-        ),
-        # Crypto: Bitcoin
-        Position(
-            account_id="1001272756530281",
-            broker_id="futubull-hk",
+            account_id="U16110728",
+            broker_id="ibkr-hk",
             instrument="Bitcoin",
             symbol="BTC",
-            position=0.5,
-            average_price=65200.00,
-            mark_price=71200.00,
+            position=0.05981,
+            average_price=70729.40,
+            mark_price=75851.50,
+            currency="USD",
+            expiry_date=None,
+            delivery_date=None,
+            multiplier=1.0,
+        ),
+        # 3. CTAP: 162 pos, 26.00 mark, 28.62 avg
+        Position(
+            account_id="U16110728",
+            broker_id="ibkr-hk",
+            instrument="Capital Group Short Duration Municipal Income ETF",
+            symbol="CTAP",
+            position=162.0,
+            average_price=28.62,
+            mark_price=26.00,
+            currency="USD",
+            expiry_date=None,
+            delivery_date=None,
+            multiplier=1.0,
+        ),
+        # 4. ESH27 7400P 261218: -1 pos, 169.41 mark, 90.97 avg (multiplier 50)
+        Position(
+            account_id="U16110728",
+            broker_id="ibkr-hk",
+            instrument="E-mini S&P 500 Mar 19 '27 7400 Put Dec 18 '26",
+            symbol="ESH27 7400P 261218",
+            position=-1.0,
+            average_price=90.97,
+            mark_price=169.41,
+            currency="USD",
+            expiry_date="2026-12-18",
+            delivery_date=None,
+            multiplier=50.0,
+        ),
+        # 5. GOOGL290119P00230000: 1 pos, 100.32 mark, 96.66 avg (multiplier 100)
+        Position(
+            account_id="U16110728",
+            broker_id="ibkr-hk",
+            instrument="GOOGL Jan 19 '29 230 Put",
+            symbol="GOOGL290119P00230000",
+            position=1.0,
+            average_price=96.66,
+            mark_price=100.32,
+            currency="USD",
+            expiry_date="2029-01-19",
+            delivery_date=None,
+            multiplier=100.0,
+        ),
+        # 6. MATE: 150 pos, 29.09 mark, 30.90 avg
+        Position(
+            account_id="U16110728",
+            broker_id="ibkr-hk",
+            instrument="Roundhill MEME ETF",
+            symbol="MATE",
+            position=150.0,
+            average_price=30.90,
+            mark_price=29.09,
+            currency="USD",
+            expiry_date=None,
+            delivery_date=None,
+            multiplier=1.0,
+        ),
+        # 7. NVDA290119C00145000: 1 pos, 73.38 mark, 70.82 avg (multiplier 100)
+        Position(
+            account_id="U16110728",
+            broker_id="ibkr-hk",
+            instrument="NVDA Jan 19 '29 145 Call",
+            symbol="NVDA290119C00145000",
+            position=1.0,
+            average_price=70.82,
+            mark_price=73.38,
+            currency="USD",
+            expiry_date="2029-01-19",
+            delivery_date=None,
+            multiplier=100.0,
+        ),
+        # 8. QLD: 111.13 pos, 74.36 mark, 78.64 avg
+        Position(
+            account_id="U16110728",
+            broker_id="ibkr-hk",
+            instrument="ProShares Ultra QQQ",
+            symbol="QLD",
+            position=111.13,
+            average_price=78.64,
+            mark_price=74.36,
+            currency="USD",
+            expiry_date=None,
+            delivery_date=None,
+            multiplier=1.0,
+        ),
+        # 9. RSST: 137 pos, 32.05 mark, 30.73 avg
+        Position(
+            account_id="U16110728",
+            broker_id="ibkr-hk",
+            instrument="Return Stacked US Stocks & Futures Yield ETF",
+            symbol="RSST",
+            position=137.0,
+            average_price=30.73,
+            mark_price=32.05,
+            currency="USD",
+            expiry_date=None,
+            delivery_date=None,
+            multiplier=1.0,
+        ),
+        # 10. SSO: 135.31 pos, 64.10 mark, 63.86 avg
+        Position(
+            account_id="U16110728",
+            broker_id="ibkr-hk",
+            instrument="ProShares Ultra S&P500",
+            symbol="SSO",
+            position=135.31,
+            average_price=63.86,
+            mark_price=64.10,
+            currency="USD",
+            expiry_date=None,
+            delivery_date=None,
+            multiplier=1.0,
+        ),
+        # 11. TQQQ: 73.62 pos, 52.40 mark, 59.39 avg
+        Position(
+            account_id="U16110728",
+            broker_id="ibkr-hk",
+            instrument="ProShares UltraPro QQQ",
+            symbol="TQQQ",
+            position=73.62,
+            average_price=59.39,
+            mark_price=52.40,
+            currency="USD",
+            expiry_date=None,
+            delivery_date=None,
+            multiplier=1.0,
+        ),
+        # 12. UPRO: 32.23 pos, 129.32 mark, 131.29 avg
+        Position(
+            account_id="U16110728",
+            broker_id="ibkr-hk",
+            instrument="ProShares UltraPro S&P500",
+            symbol="UPRO",
+            position=32.23,
+            average_price=131.29,
+            mark_price=129.32,
             currency="USD",
             expiry_date=None,
             delivery_date=None,
             multiplier=1.0,
         ),
     ],
+    "futubull-hk": [],
 }
