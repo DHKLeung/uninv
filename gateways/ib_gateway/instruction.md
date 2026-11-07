@@ -6,7 +6,19 @@ This guide explains how to install, configure, and connect **IB Gateway** (or **
 
 ## 1. Overview & Architecture
 
-Instead of bundling heavy third-party broker binaries or using the legacy Client Portal gateway (which cannot handle modern WebAuthn/Passkey authentication), `uninv` interfaces with **standalone broker daemons** running on your local machine:
+### Why Client Portal Gateway Was Abandoned (The Mandatory Passkey Blocker)
+Initially, using Interactive Brokers' **Client Portal Gateway** (`clientportal.gw` / CP Web API) seemed appealing for a REST/JSON interface. However, **it is completely broken for accounts with mandatory Passkeys**:
+- **No WebAuthn / Passkey Support:** IBKR recently began enforcing mandatory biometric passkeys (FIDO2 / WebAuthn) for user accounts. However, IBKR's Client Portal Gateway web interface (`https://localhost:5000`) is legacy and has not been updated to support WebAuthn APIs. When attempting to log in, it completely fails to trigger the browser's passkey authentication prompt.
+- **Permanent Lockout:** Because IBKR enforces passkeys and the gateway cannot prompt for them, users with passkey-secured accounts are completely locked out of authenticating through the Client Portal Gateway.
+- **Instability & Daily Dropouts:** In addition to the passkey blocker, the Client Portal gateway suffers from aggressive session timeouts (requiring daily re-logins through a browser), self-signed TLS certificate complications, and aggressive backend caching.
+
+For these reasons, **Client Portal Gateway was permanently abandoned**.
+
+---
+
+### The Solution: Standalone IB Gateway / TWS
+
+`uninv` interfaces directly with **standalone broker daemons** running on your local machine:
 
 ```
 ┌────────────────────────────────────────┐
