@@ -138,11 +138,12 @@ The user's IBKR passkey is stored on their **iPhone (iCloud Keychain)**, not on 
 2. **Embedded JxBrowser Limitations:**
    - IB Gateway renders its login flow using JxBrowser. Unlike Google Chrome (which implements its own proprietary WebAuthn Bluetooth relay to iPhones), desktop Java/CEF embedded browsers delegate directly to the underlying Windows OS WebAuthn dialog.
 
-### The Solutions
-1. **Solution A (Recommended): Enroll Windows Hello as a Second Passkey:**
-   - Open Chrome or Edge on Windows, log into the IBKR web portal, and go to **Settings > Security > Secure Login System (SLS) > Passkeys**.
-   - Click **"Add a Passkey"** and select **"This Windows device"** (Windows Hello PIN).
-   - Once enrolled, IB Gateway will simply prompt for your Windows PIN on your PC and log in instantly without requiring your iPhone or any USB key.
-2. **Solution B: Fall back to IB Key (IBKR Mobile App 2FA):**
-   - Click **Cancel** on the USB prompt to switch to IB Key (push notification or Challenge-Response code in the IBKR Mobile app on iPhone).
-   - Alternatively, configure IBKR Mobile as the default SLS method in account settings.
+### The Enforced Security Model (No Legacy 2FA Fallback)
+Important fact: Once a passkey is registered on an IBKR account, **IBKR strictly enforces Passkeys only**. Legacy 2FA methods (SMS, push notification IB Key, and Challenge-Response) are disabled by IBKR's security policy.
+
+### The Definitive Solution: Enroll Windows Hello as a Second Passkey
+IBKR supports registering **up to 3 to 5 passkeys** per account. To solve the Windows 10 desktop app limitation:
+1. **Log in via Web Browser:** Open Google Chrome or Microsoft Edge on your PC and navigate to `https://www.interactivebrokers.com`. Browsers have built-in WebAuthn QR code scanners: scan the QR code with your iPhone to log into the web portal.
+2. **Add Windows Hello:** Navigate to **User Menu > Settings > Security > Secure Login System (SLS) > Passkeys** and click **"Add a Passkey"**.
+3. **Register "This Device":** Select your local PC / Windows Hello and confirm with your Windows PIN or fingerprint.
+4. **Log Into IB Gateway:** Open IB Gateway and log in. Windows Security will prompt for your local **Windows Hello PIN**, authenticating immediately without needing an iPhone or USB key.
