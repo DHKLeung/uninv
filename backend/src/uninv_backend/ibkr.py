@@ -11,9 +11,6 @@ from uninv_backend.models import AccountValues, CashBalanceItem, Position
 
 logger = logging.getLogger(__name__)
 
-# Default TWS live socket port
-DEFAULT_PORT = 7496
-
 
 def _normalize_average_price(
     average_cost: float,
