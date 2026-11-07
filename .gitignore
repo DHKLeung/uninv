@@ -15,9 +15,6 @@ backend/build/
 target/
 desktop/src-tauri/gen/schemas/
 
-# Broker Gateways runtime logs and caches
-gateways/**/logs/
-gateways/**/.vertx/
 
 # Secrets & local config (broker credentials must never be committed)
 .env

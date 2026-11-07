@@ -21,9 +21,8 @@ any Rust change in plain terms.
   - `icons/` were generated from `../app-icon.png`; regenerate with
     `cargo tauri icon ../app-icon.png`.
 
-## Cross-platform & Mobile (iOS)
-- Mobile UI: Use `viewport-fit=cover` and CSS safe areas (`env(safe-area-inset-top)` / `env(safe-area-inset-bottom)`).
-- On iOS, Tauri runs as a client connecting to a remote/LAN host since the iOS sandbox forbids daemon subprocesses.
+## Platform
+- Windows only (Windows 10 / 11 64-bit). Uses Microsoft Edge WebView2.
 
 ## Conventions
 - Tauri **2.x** only (`tauri = "2"`). Tauri 3 is in alpha; don't upgrade.

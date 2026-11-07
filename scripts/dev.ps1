@@ -1,83 +1,54 @@
 <#
 .SYNOPSIS
-    Run uninv in one click: broker gateways + Python backend + desktop app.
+    Run uninv on Windows: Python backend + desktop app.
     All processes are monitored and stopped cleanly together when exiting or pressing Ctrl+C.
 
 .EXAMPLE
-    .\scripts\dev.ps1                  # gateways + backend + Tauri desktop app
-    .\scripts\dev.ps1 -Browser         # gateways + backend + UI in browser (no Rust build)
-    .\scripts\dev.ps1 -ServicesOnly    # gateways + backend only (headless, no UI)
-    .\scripts\dev.ps1 -NoGateway       # backend + UI only (skip broker gateways)
+    .\scripts\dev.ps1                  # backend + Tauri desktop app
+    .\scripts\dev.ps1 -Browser         # backend + UI in browser (no Rust build needed)
+    .\scripts\dev.ps1 -ServicesOnly    # backend only (headless, no UI)
 #>
 param(
     [switch]$Browser,
     [Alias("NoUI")]
-    [switch]$ServicesOnly,
-    [switch]$NoGateway
+    [switch]$ServicesOnly
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 
-# Ensure PATH has Java, uv, and cargo available
+# Ensure PATH has uv and cargo
 $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
 $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
 $env:Path = "$machinePath;$userPath;$env:USERPROFILE\.local\bin;$env:USERPROFILE\.cargo\bin;$env:Path"
 
-if (-not (Get-Command java -ErrorAction SilentlyContinue)) {
-    $foundJava = Get-ChildItem "C:\Program Files\Microsoft" -Recurse -Filter "java.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($foundJava) {
-        $javaBin = Split-Path $foundJava.FullName
-        $env:Path = "$javaBin;$env:Path"
-        $env:JAVA_HOME = Split-Path $javaBin
-    }
-}
-
-$ibkrGateway = $null
 $backend = $null
 $frontend = $null
 
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "  UNINV: Unified Investing Development Environment" -ForegroundColor Cyan
+Write-Host "  UNINV: Windows Investment Management Environment" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 try {
     # ---------------------------------------------------------
-    # 1. Start Broker Gateways
+    # 1. Check TWS / IB Gateway Status
     # ---------------------------------------------------------
-    if (-not $NoGateway) {
-        # Check IBKR Client Portal Gateway (:5000)
-        $ibkrDir = Join-Path $root "gateways\ibkr-gateway"
-        if (Test-Path $ibkrDir) {
-            $ibkrPortActive = (Get-NetTCPConnection -LocalPort 5000 -ErrorAction SilentlyContinue) -ne $null
-            if ($ibkrPortActive) {
-                Write-Host "[IBKR] Gateway already running on https://localhost:5000" -ForegroundColor Green
-            } else {
-                Write-Host "[IBKR] Starting Client Portal Gateway on https://localhost:5000 ..." -ForegroundColor Cyan
-                $ibkrGateway = Start-Process -PassThru -NoNewWindow -WorkingDirectory $ibkrDir `
-                    -FilePath "cmd.exe" -ArgumentList "/c", "bin\run.bat", "root\conf.yaml"
-                
-                # Wait briefly for port 5000
-                $sw = [System.Diagnostics.Stopwatch]::StartNew()
-                while ($sw.ElapsedMilliseconds -lt 6000) {
-                    Start-Sleep -Milliseconds 500
-                    if ((Get-NetTCPConnection -LocalPort 5000 -ErrorAction SilentlyContinue) -ne $null) {
-                        break
-                    }
-                }
-                Write-Host "[IBKR] Gateway listening on https://localhost:5000" -ForegroundColor Green
-                Write-Host "       (Log in at https://localhost:5000 to authenticate 2FA)" -ForegroundColor Yellow
-            }
-        }
+    $twsLive = (Get-NetTCPConnection -LocalPort 7496 -ErrorAction SilentlyContinue) -ne $null
+    $twsPaper = (Get-NetTCPConnection -LocalPort 7497 -ErrorAction SilentlyContinue) -ne $null
+    $gwLive = (Get-NetTCPConnection -LocalPort 4001 -ErrorAction SilentlyContinue) -ne $null
+    $gwPaper = (Get-NetTCPConnection -LocalPort 4002 -ErrorAction SilentlyContinue) -ne $null
 
-        # Check Futubull Gateway (:11111) when present
-        $futuDir = Join-Path $root "gateways\futubull-gateway"
-        if (Test-Path $futuDir) {
-            $futuPortActive = (Get-NetTCPConnection -LocalPort 11111 -ErrorAction SilentlyContinue) -ne $null
-            if ($futuPortActive) {
-                Write-Host "[Futubull] Gateway already running on 127.0.0.1:11111" -ForegroundColor Green
-            }
-        }
+    if ($twsLive) {
+        Write-Host "[IBKR] TWS Live API detected on port 7496" -ForegroundColor Green
+    } elseif ($twsPaper) {
+        Write-Host "[IBKR] TWS Paper API detected on port 7497" -ForegroundColor Green
+    } elseif ($gwLive) {
+        Write-Host "[IBKR] IB Gateway Live detected on port 4001" -ForegroundColor Green
+    } elseif ($gwPaper) {
+        Write-Host "[IBKR] IB Gateway Paper detected on port 4002" -ForegroundColor Green
+    } else {
+        Write-Host "[IBKR] Notice: TWS / IB Gateway not detected on 7496/7497/4001/4002." -ForegroundColor Yellow
+        Write-Host "       (Make sure TWS is running with 'Enable ActiveX and Socket Clients' enabled)" -ForegroundColor Yellow
     }
 
     # ---------------------------------------------------------
@@ -99,9 +70,8 @@ try {
     # ---------------------------------------------------------
     if ($ServicesOnly) {
         Write-Host "==========================================================" -ForegroundColor Green
-        Write-Host "  All services and gateways running. Press Ctrl+C to stop." -ForegroundColor Green
+        Write-Host "  Backend running. Press Ctrl+C to stop." -ForegroundColor Green
         Write-Host "==========================================================" -ForegroundColor Green
-        # Wait until user interrupts
         while ($true) {
             Start-Sleep -Seconds 1
         }
@@ -127,15 +97,11 @@ try {
     }
 }
 finally {
-    Write-Host "`nShutting down all services and gateways cleanly ..." -ForegroundColor Cyan
-    foreach ($p in @($backend, $ibkrGateway, $frontend)) {
+    Write-Host "`nShutting down cleanly ..." -ForegroundColor Cyan
+    foreach ($p in @($backend, $frontend)) {
         if ($p -and -not $p.HasExited) {
-            if ($IsWindows -or ($null -eq $IsWindows -and $env:OS -match 'Windows')) {
-                taskkill /PID $p.Id /T /F *> $null
-            } else {
-                Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-            }
+            taskkill /PID $p.Id /T /F *> $null
         }
     }
-    Write-Host "All services stopped." -ForegroundColor Green
+    Write-Host "All processes stopped." -ForegroundColor Green
 }

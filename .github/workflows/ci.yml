@@ -12,12 +12,8 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+    name: Backend (Windows)
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
@@ -42,22 +38,12 @@ jobs:
         run: uv run pytest
 
   desktop:
-    name: Desktop Rust Shell (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+    name: Desktop Rust Shell (Windows)
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Install Linux webview dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
