@@ -16,6 +16,9 @@ target/
 desktop/src-tauri/gen/schemas/
 
 
+# Jupyter
+.ipynb_checkpoints/
+
 # Secrets & local config (broker credentials must never be committed)
 .env
 .env.*
