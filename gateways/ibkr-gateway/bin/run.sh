@@ -28,5 +28,4 @@ java \
 -Dnolog4j.debug=true \
 -Dnolog4j2.debug=true \
 -cp "${RUNTIME_PATH}" \
-ibgroup.web.core.clientportal.gw.GatewayStart \
---conf ../$config_file \
+ibgroup.web.core.clientportal.gw.GatewayStart
