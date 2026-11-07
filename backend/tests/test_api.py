@@ -1,7 +1,10 @@
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 
 from uninv_backend.app import app
+from uninv_backend.models import AccountValues, CashBalanceItem, Position
 
 
 @pytest.fixture
@@ -21,178 +24,218 @@ def test_health(client: TestClient) -> None:
     assert resp.json()["status"] == "ok"
 
 
-def test_brokers_endpoint(client: TestClient) -> None:
-    resp = client.get("/api/v1/brokers")
+def test_supporting_brokers_endpoint(client: TestClient) -> None:
+    resp = client.get("/api/v1/supporting-brokers")
     assert resp.status_code == 200
     brokers = resp.json()
-    assert len(brokers) == 2
-    assert brokers == [
-        {"id": "ibkr-hk", "name": "Interactive Brokers (Hong Kong)"},
-        {"id": "futubull-hk", "name": "Futubull (Hong Kong)"},
-    ]
+    assert brokers == [{"id": "ibkr", "name": "Interactive Brokers"}]
 
 
-def test_accounts_ibkr_endpoint(client: TestClient) -> None:
-    resp = client.get("/api/v1/accounts/ibkr-hk")
-    assert resp.status_code == 200
-    accounts = resp.json()
-    assert len(accounts) == 1
-    assert accounts[0] == {
-        "account_id": "U16110728",
-        "broker_id": "ibkr-hk",
-        "alias": "IBKR-HK (0728)",
-    }
-
-
-def test_accounts_futubull_endpoint(client: TestClient) -> None:
-    resp = client.get("/api/v1/accounts/futubull-hk")
-    assert resp.status_code == 200
-    accounts = resp.json()
-    assert len(accounts) == 3
-    assert [a["alias"] for a in accounts] == [
-        "Futubull-HK (7283)",
-        "Futubull-HK (7612)",
-        "Futubull-HK (0281)",
-    ]
-    assert [a["account_id"] for a in accounts] == [
-        "1001279250287283",
-        "1001281798927612",
-        "1001272756530281",
-    ]
+def test_accounts_endpoint(client: TestClient) -> None:
+    with patch(
+        "uninv_backend.api.routes.ibkr_service.get_accounts",
+        return_value=["U16110728"],
+    ):
+        resp = client.get("/api/v1/accounts?broker_id=ibkr")
+        assert resp.status_code == 200
+        assert resp.json() == ["U16110728"]
 
 
 def test_accounts_unknown_broker_404(client: TestClient) -> None:
-    resp = client.get("/api/v1/accounts/unknown-broker")
+    resp = client.get("/api/v1/accounts?broker_id=unknown-broker")
     assert resp.status_code == 404
+    assert "not supported" in resp.json()["detail"]
 
 
-def test_cash_balance_endpoint(client: TestClient) -> None:
-    resp = client.get("/api/v1/cash-balance/ibkr-hk?account_id=U16110728")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data == {
-        "broker_id": "ibkr-hk",
-        "account_id": "U16110728",
-        "cash_balance": -6612.62,
-        "currency": "USD",
-    }
-
-    # All accounts for broker
-    all_resp = client.get("/api/v1/cash-balance/ibkr-hk")
-    assert all_resp.status_code == 200
-    assert len(all_resp.json()) == 1
-
-    # Futubull cash balances
-    futu_resp = client.get("/api/v1/cash-balance/futubull-hk")
-    assert futu_resp.status_code == 200
-    assert len(futu_resp.json()) == 3
+def test_accounts_service_unavailable_503(client: TestClient) -> None:
+    with patch(
+        "uninv_backend.api.routes.ibkr_service.get_accounts",
+        side_effect=ConnectionError("Could not connect to IBKR gateway"),
+    ):
+        resp = client.get("/api/v1/accounts?broker_id=ibkr")
+        assert resp.status_code == 503
+        assert "Could not connect to IBKR gateway" in resp.json()["detail"]
 
 
-def test_cash_balance_unknown_404(client: TestClient) -> None:
-    assert client.get("/api/v1/cash-balance/unknown-broker").status_code == 404
-    assert (
-        client.get(
-            "/api/v1/cash-balance/ibkr-hk?account_id=invalid-account"
-        ).status_code
-        == 404
+def test_account_values_endpoint(client: TestClient) -> None:
+    mock_values = AccountValues(
+        available_funds=42138.60,
+        buying_power=280923.98,
+        excess_liquidity=48390.88,
+        maintenance_margin=51633.95,
+        currency="USD",
+        cash_balances=[
+            CashBalanceItem(currency="USD", amount=-6612.62),
+            CashBalanceItem(currency="HKD", amount=12500.00),
+        ],
     )
+    with patch(
+        "uninv_backend.api.routes.ibkr_service.get_account_values",
+        return_value=mock_values,
+    ):
+        resp = client.get("/api/v1/account-values?broker_id=ibkr&account_id=U16110728")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["available_funds"] == 42138.60
+        assert data["buying_power"] == 280923.98
+        assert data["excess_liquidity"] == 48390.88
+        assert data["maintenance_margin"] == 51633.95
+        assert data["currency"] == "USD"
+        assert len(data["cash_balances"]) == 2
+        assert data["cash_balances"][0] == {"currency": "USD", "amount": -6612.62}
+        assert data["cash_balances"][1] == {"currency": "HKD", "amount": 12500.00}
 
 
-def test_positions_ibkr_endpoint(client: TestClient) -> None:
-    resp = client.get("/api/v1/positions/ibkr-hk")
-    assert resp.status_code == 200
-    positions = resp.json()
-    assert len(positions) == 12
-
-    # Check required fields exist on every position
-    for p in positions:
-        assert "instrument" in p
-        assert "symbol" in p
-        assert "position" in p
-        assert "average_price" in p
-        assert "mark_price" in p
-        assert "currency" in p
-        assert "expiry_date" in p
-        assert "delivery_date" in p
-        assert p["currency"] == "USD"
-        # Ensure derived metrics are not computed by the backend API for standard positions
-        assert p["market_value"] is None
-        assert p["cost_basis"] is None
-
-    # Verify stock options
-    googl_opt = next(p for p in positions if p["symbol"] == "GOOGL290119P00230000")
-    assert googl_opt["instrument"] == "GOOGL Jan 19 '29 230 Put"
-    assert googl_opt["expiry_date"] == "2029-01-19"
-    assert googl_opt["delivery_date"] is None
-    assert googl_opt["multiplier"] == 100.0
-
-    nvda_opt = next(p for p in positions if p["symbol"] == "NVDA290119C00145000")
-    assert nvda_opt["instrument"] == "NVDA Jan 19 '29 145 Call"
-    assert nvda_opt["expiry_date"] == "2029-01-19"
-    assert nvda_opt["delivery_date"] is None
-    assert nvda_opt["multiplier"] == 100.0
-
-    # Verify futures option
-    es_fopt = next(p for p in positions if p["symbol"] == "ESH27 7400P 261218")
-    assert es_fopt["instrument"] == "E-mini S&P 500 Mar 19 '27 7400 Put Dec 18 '26"
-    assert es_fopt["expiry_date"] == "2026-12-18"
-    assert es_fopt["delivery_date"] is None
-    assert es_fopt["multiplier"] == 50.0
-
-    # Verify Bitcoin position is present
-    btc = next(p for p in positions if p["symbol"] == "BTC")
-    assert btc["instrument"] == "Bitcoin"
-    assert btc["position"] == 0.05981
-    assert btc["mark_price"] == 75851.50
-    assert btc["average_price"] == 70729.40
-
-    # Verify QLD leveraged ETF
-    qld = next(p for p in positions if p["symbol"] == "QLD")
-    assert qld["position"] == 111.13
-    assert qld["mark_price"] == 74.36
-    assert qld["average_price"] == 78.64
-
-
-def test_positions_futubull_endpoint(client: TestClient) -> None:
-    resp = client.get("/api/v1/positions/futubull-hk")
-    assert resp.status_code == 200
-    positions = resp.json()
-    assert len(positions) == 6
-
-    # Verify money market fund without units / prices
-    mmf = next(p for p in positions if p["symbol"] == "HK0000923844")
-    assert mmf["instrument"] == "ChinaAMC Select USD Money Market Fund"
-    assert mmf["position"] is None
-    assert mmf["average_price"] is None
-    assert mmf["mark_price"] is None
-    assert mmf["market_value"] == 54565.17
-
-    # Filter account 7283
-    acct_7283 = client.get(
-        "/api/v1/positions/futubull-hk?account_id=1001279250287283"
-    ).json()
-    assert len(acct_7283) == 5
-
-    # Filter account 0281 (BTC)
-    acct_0281 = client.get(
-        "/api/v1/positions/futubull-hk?account_id=1001272756530281"
-    ).json()
-    assert len(acct_0281) == 1
-    assert acct_0281[0]["symbol"] == "BTC"
-    assert acct_0281[0]["position"] == 0.0791
-
-    # Filter account 7612 (empty)
-    acct_7612 = client.get(
-        "/api/v1/positions/futubull-hk?account_id=1001281798927612"
-    ).json()
-    assert len(acct_7612) == 0
-
-
-def test_positions_unknown_account_404(client: TestClient) -> None:
-    resp = client.get("/api/v1/positions/futubull-hk?account_id=invalid-id")
+def test_account_values_unknown_broker_404(client: TestClient) -> None:
+    resp = client.get("/api/v1/account-values?broker_id=futubull&account_id=U16110728")
     assert resp.status_code == 404
+
+
+def test_account_values_unknown_account_404(client: TestClient) -> None:
+    with patch(
+        "uninv_backend.api.routes.ibkr_service.get_account_values",
+        side_effect=ValueError("Account 'invalid' not found"),
+    ):
+        resp = client.get("/api/v1/account-values?broker_id=ibkr&account_id=invalid")
+        assert resp.status_code == 404
+        assert "not found" in resp.json()["detail"]
+
+
+def test_positions_endpoint(client: TestClient) -> None:
+    mock_positions = [
+        Position(
+            instrument="ALPHA ARCHITECT 1-3 MNTH BOX",
+            symbol="BOXX",
+            position=463.0,
+            average_price=115.5847,
+            market_price=118.95,
+            multiplier=1.0,
+            currency="USD",
+            primary_exchange="BATS",
+            last_trading_date=None,
+            sec_type="STK",
+            strike=None,
+            right=None,
+            underlying_symbol="BOXX",
+            con_id=604408720,
+        ),
+        Position(
+            instrument="ALPHABET INC-CL A",
+            symbol="GOOGL 290119C00230000",
+            position=1.0,
+            average_price=96.6577,
+            market_price=100.7369,
+            multiplier=100.0,
+            currency="USD",
+            primary_exchange="AMEX",
+            last_trading_date="20290119",
+            sec_type="OPT",
+            strike=230.0,
+            right="C",
+            underlying_symbol="GOOGL",
+            con_id=924079172,
+        ),
+    ]
+
+    with patch(
+        "uninv_backend.api.routes.ibkr_service.get_positions",
+        return_value=mock_positions,
+    ):
+        resp = client.get("/api/v1/positions?broker_id=ibkr&account_id=U16110728")
+        assert resp.status_code == 200
+        positions = resp.json()
+        assert len(positions) == 2
+
+        # Check raw non-derived fields
+        boxx = positions[0]
+        assert boxx["instrument"] == "ALPHA ARCHITECT 1-3 MNTH BOX"
+        assert boxx["symbol"] == "BOXX"
+        assert boxx["position"] == 463.0
+        assert boxx["average_price"] == 115.5847
+        assert boxx["market_price"] == 118.95
+        assert boxx["multiplier"] == 1.0
+        assert boxx["currency"] == "USD"
+        assert boxx["primary_exchange"] == "BATS"
+        assert boxx["last_trading_date"] is None
+        assert boxx["sec_type"] == "STK"
+        # Ensure no derived metrics are returned
+        assert "market_value" not in boxx
+        assert "cost_basis" not in boxx
+        assert "unrealized_pnl" not in boxx
+
+        googl = positions[1]
+        assert googl["instrument"] == "ALPHABET INC-CL A"
+        assert googl["symbol"] == "GOOGL 290119C00230000"
+        assert googl["multiplier"] == 100.0
+        assert googl["strike"] == 230.0
+        assert googl["right"] == "C"
+        assert googl["last_trading_date"] == "20290119"
 
 
 def test_positions_unknown_broker_404(client: TestClient) -> None:
-    resp = client.get("/api/v1/positions/unknown-broker")
+    resp = client.get("/api/v1/positions?broker_id=unknown&account_id=U16110728")
     assert resp.status_code == 404
+
+
+def test_positions_unknown_account_404(client: TestClient) -> None:
+    with patch(
+        "uninv_backend.api.routes.ibkr_service.get_positions",
+        side_effect=ValueError("Account 'invalid' not found"),
+    ):
+        resp = client.get("/api/v1/positions?broker_id=ibkr&account_id=invalid")
+        assert resp.status_code == 404
+
+
+def test_normalize_average_price_for_derivatives() -> None:
+    from ib_async import Crypto, FuturesOption, Option, Stock
+
+    from uninv_backend.ibkr import _normalize_average_price
+
+    # 1. FuturesOption (multiplier 50)
+    fop = FuturesOption(symbol="ES", strike=7400.0, right="P", multiplier="50")
+    norm_fop = _normalize_average_price(average_cost=4548.59, contract=fop, multiplier=50.0)
+    assert round(norm_fop, 4) == 90.9718
+
+    # 2. Equity Option (multiplier 100)
+    opt = Option(symbol="GOOGL", strike=230.0, right="C", multiplier="100")
+    norm_opt = _normalize_average_price(average_cost=9665.7673, contract=opt, multiplier=100.0)
+    assert round(norm_opt, 4) == 96.6577
+
+    # 3. Stock (multiplier 1.0)
+    stk = Stock(symbol="BOXX")
+    norm_stk = _normalize_average_price(average_cost=115.5847, contract=stk, multiplier=1.0)
+    assert norm_stk == 115.5847
+
+    # 4. Crypto (multiplier 1.0)
+    crypto = Crypto(symbol="BTC")
+    norm_crypto = _normalize_average_price(average_cost=70729.40, contract=crypto, multiplier=1.0)
+    assert norm_crypto == 70729.40
+
+
+def test_ibkr_service_connect_failure_raises_connection_error_with_reason() -> None:
+    from uninv_backend.ibkr import IBKRService
+
+    # Use a dummy non-existent port to test connection failure immediately
+    service = IBKRService(host="127.0.0.1", port=59999, timeout=0.1)
+    with pytest.raises(ConnectionError) as exc_info:
+        service._ensure_connected()
+    assert "Could not connect to IBKR TWS on 127.0.0.1:59999" in str(exc_info.value)
+    assert "port 59999" in str(exc_info.value)
+
+    # Also verify default port 7496
+    default_service = IBKRService()
+    assert default_service.port == 7496
+
+
+def test_endpoint_returns_503_when_tws_unreachable(client: TestClient) -> None:
+    from uninv_backend.api import routes
+    from uninv_backend.ibkr import IBKRService
+
+    # Swap in a service pointing to a closed port to simulate TWS being offline
+    offline_service = IBKRService(host="127.0.0.1", port=59999, timeout=0.1)
+    with patch.object(routes, "ibkr_service", offline_service):
+        resp = client.get("/api/v1/accounts?broker_id=ibkr")
+        assert resp.status_code == 503
+        data = resp.json()
+        assert "Could not connect to IBKR TWS on 127.0.0.1:59999" in data["detail"]
+        assert "Please ensure TWS is running" in data["detail"]

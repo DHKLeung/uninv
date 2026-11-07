@@ -97,32 +97,23 @@ backend running, then
 
 _Last updated: 2026-11-07_
 
-- ✅ Backend rewritten to streamlined Pydantic v2 architecture:
-  - Brokers: `Interactive Brokers (Hong Kong)` (`ibkr-hk`) and `Futubull (Hong Kong)` (`futubull-hk`).
-  - Accounts metadata: `IBKR-HK (0728)`, `Futubull-HK (7283)`, `Futubull-HK (7612)`, `Futubull-HK (0281)`.
-  - Positions: mock data across stocks, ETFs, futures (with delivery date), stock options (with expiry date), futures options (with expiry date), Bitcoin, and money market funds (e.g. `ChinaAMC Select USD Money Market Fund` HK0000923844). Raw broker fields only; derived metrics (market value, cost basis, unrealised P&L) computed in frontend.
-  - Clean endpoints: `GET /api/v1/brokers`, `GET /api/v1/accounts/{broker_id}`, `GET /api/v1/cash-balance/{broker_id}`, `GET /api/v1/positions/{broker_id}`.
-  - All 12 backend tests pass, Ruff check passes.
-- ✅ GUI Application updated:
-  - Configured for 16:9 1600×900 default display layout (`tauri.conf.json` and responsive CSS).
-  - Navigation tab header with `Portfolio` active tab.
-  - British English KPI cards: `NET LIQUIDATION VALUE`, `POSITION VALUE`, `CASH BALANCE`, `UNREALISED P&L` (with % and no "on cost").
-  - Top right: As-of timestamp, currency selector (USD `$` and GBP `£` at 0.7487 FX rate), refresh button.
-  - Accounts section: Account cards displaying `NET LIQUIDATION VALUE`, `POSITION VALUE`, `CASH BALANCE`, and `UNREALISED P&L`, with quick-filter click support.
-  - Holdings & Balances section: Big unified section with account filter pills (`All`, `IBKR-HK (0728)`, etc.) and two subsections:
-    1. Positions: search box, count badge, and 12-column table (with Expiry Date, Delivery Date, Cost Basis, and Market Value).
-    2. Cash Balances: displays associated account, broker, account number, currency, and cash balance.
-  - Removed obsolete simulated badge, allocation panels, and groups.
-- ✅ Rust shell compiles cleanly (`cargo check`).
-- ✅ Shifted to Standalone Broker Daemon Architecture (Cross-Platform):
-  - Client Portal Gateway abandoned due to IBKR passkey authentication limitations.
-  - Broker gateways (IB Gateway / TWS, Futu OpenD) run standalone on the host OS, supporting native passkeys and 2FA across Windows, macOS, and Linux.
-  - Added `gateways/ib_gateway/instruction.md` setup and configuration guide.
-  - Cross-platform CI matrix (`windows-latest`, `macos-latest`, `ubuntu-latest`) and runner scripts (`dev.ps1`, `dev.cmd`, `dev.sh`) enabled.
-  - Integrated `ib_async` into backend dependencies for high-performance asyncio socket communication.
-  - Next: Build live IBKR connector service in `backend/src/uninv_backend/` to query IB Gateway on port 4001/7496.
+- ✅ Backend rewritten to pure raw broker feed model (IBKR live integration):
+  - Abstracted all broker complexity into FastAPI: backend translates raw broker feeds into uninv unified models.
+  - Endpoints converted to query parameters and synchronous handlers (`def`, run in FastAPI threadpool):
+    - `GET /api/v1/supporting-brokers`: returns `[{"id": "ibkr", "name": "Interactive Brokers"}]`.
+    - `GET /api/v1/accounts?broker_id=ibkr`: returns pure account ID strings, e.g. `["U16110728"]`.
+    - `GET /api/v1/account-values?broker_id=ibkr&account_id=U16110728`: returns raw margin and cash data (`available_funds`, `buying_power`, `excess_liquidity`, `maintenance_margin`, `cash_balances` list by currency, excluding `BASE`).
+    - `GET /api/v1/positions?broker_id=ibkr&account_id=U16110728`: returns raw positions with `instrument` (long name), `symbol` (`localSymbol`), `position`, `average_price`, `market_price`, `multiplier`, `currency`, `primary_exchange`, `last_trading_date`, `sec_type`, `strike`, `right`, `underlying_symbol`, `con_id`.
+  - Non-derivable principle strictly enforced: derived metrics (market value, cost basis, unrealised P&L, NLV) are intentionally omitted from backend payloads.
+  - `IBKRService` in `backend/src/uninv_backend/ibkr.py` connects directly to TWS on port 7496 with `readonly=True` (connects in ~0.1s), thread-safe querying via `threading.Lock`, and in-memory contract name caching. Probing multiple ports is removed.
+  - Independent FastAPI lifecycle: backend spins up cleanly regardless of whether TWS is running. Endpoints fail gracefully with descriptive error reasons (HTTP 503) if TWS is unreachable, and auto-reconnect once TWS is launched without needing a backend restart.
+  - All 15 backend tests pass, Ruff check passes.
+- ⏸️ Desktop GUI temporarily stale (awaiting complete redesign to match new backend data contract).
+- ✅ Standalone Broker Daemon Architecture:
+  - TWS verified and connected via socket API on port 7496.
+  - Cross-platform runners and setup guides documented in `gateways/ib_gateway/instruction.md` and `docs/trials_and_errors.md`.
 
 ### Next steps
-1. Real broker connector integrations (IBKR / Futubull).
-2. Live market data and live FX rate pulling.
-3. PyInstaller sidecar bundling for single-installer desktop deployment.
+1. Plan and implement new frontend GUI redesign to consume the new `/api/v1/` endpoints.
+2. Futubull integration via `futu-api` (Futu OpenD).
+3. Live market data and live FX rate pulling.

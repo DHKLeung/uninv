@@ -23,8 +23,8 @@ For these reasons, **Client Portal Gateway was permanently abandoned**.
 ```
 ┌────────────────────────────────────────┐
 │ Standalone Broker Gateway (User-run)   │
-│ - IB Gateway / TWS (Ports 4001 / 7496) │ ──(Passkey / 2FA / Login GUI)
-│ - Futu OpenD       (Port 11111)        │
+│ - TWS (Port 7496)                      │ ──(Passkey / 2FA / Login GUI)
+│ - Futu OpenD (Port 11111)              │
 └──────────────────┬─────────────────────┘
                    │ Local TCP Socket
 ┌──────────────────▼─────────────────────┐
@@ -40,7 +40,7 @@ For these reasons, **Client Portal Gateway was permanently abandoned**.
 ### Why IB Gateway vs TWS?
 - **IB Gateway:** Contains the exact same communication engine as TWS without the heavy charting, newsfeeds, and GUI components. Uses ~150 MB RAM (vs ~2 GB for TWS). Ideal for headless or low-resource use.
 - **Trader Workstation (TWS):** Recommended on Windows 10 if your passkey is on an iPhone. When TWS prompts for a USB security key, clicking **Cancel** reveals the built-in **"Use QR code for iPhone"** fallback, allowing seamless login via Face ID.
-- **Both use the identical Socket API:** `uninv` automatically probes both IB Gateway (`4001`/`4002`) and TWS (`7496`/`7497`). You can use whichever is running.
+- **Direct TWS Socket API:** `uninv` connects directly to TWS on port `7496`. FastAPI starts up independently whether TWS is running or not; when an endpoint is called while TWS is offline, it provides clear connection instructions and auto-reconnects as soon as TWS is launched.
 
 ---
 

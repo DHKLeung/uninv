@@ -37,24 +37,18 @@ echo "  UNINV: Unified Investing Development Environment"
 echo "=========================================================="
 
 # ---------------------------------------------------------
-# 1. Check Broker Gateways (IB Gateway / TWS, Futu OpenD)
+# 1. Check Broker Gateways (TWS, Futu OpenD)
 # ---------------------------------------------------------
 check_port() {
     local port=$1
     nc -z 127.0.0.1 "$port" 2>/dev/null || lsof -i :"$port" >/dev/null 2>&1
 }
 
-if check_port 4001; then
-    echo -e "\033[32m[IBKR] IB Gateway Live detected on port 4001\033[0m"
-elif check_port 4002; then
-    echo -e "\033[32m[IBKR] IB Gateway Paper detected on port 4002\033[0m"
-elif check_port 7496; then
+if check_port 7496; then
     echo -e "\033[32m[IBKR] TWS Live API detected on port 7496\033[0m"
-elif check_port 7497; then
-    echo -e "\033[32m[IBKR] TWS Paper API detected on port 7497\033[0m"
 else
-    echo -e "\033[33m[IBKR] Notice: IB Gateway / TWS not detected on 4001/4002/7496/7497.\033[0m"
-    echo -e "\033[33m       (Ensure IB Gateway or TWS is running with socket API enabled)\033[0m"
+    echo -e "\033[33m[IBKR] Notice: TWS not detected on port 7496.\033[0m"
+    echo -e "\033[33m       (FastAPI backend will start normally; TWS can be launched anytime)\033[0m"
 fi
 
 if check_port 11111; then

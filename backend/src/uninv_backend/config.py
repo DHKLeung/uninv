@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     # origins during development so mobile devices and web browsers on LAN can connect.
     cors_origins: list[str] = ["*"]
 
+    # Interactive Brokers (TWS) connection settings
+    ibkr_host: str = "127.0.0.1"
+    ibkr_port: int = 7496
+    ibkr_client_id: int = 99
+    ibkr_timeout: float = 2.0
+
 
 @lru_cache
 def get_settings() -> Settings:

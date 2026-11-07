@@ -1,38 +1,29 @@
 """Quick verification script for IB Gateway / TWS using ib_async."""
 
 import asyncio
+
 from ib_async import IB
 
 
 async def test_connection():
     ib = IB()
 
-    # Ports: 7496 (TWS Live), 4001 (IB Gateway Live), 7497 (TWS Paper), 4002 (IB Gateway Paper)
-    ports = [7496, 4001, 7497, 4002]
-    connected = False
-    connected_port = None
-
-    for port in ports:
-        try:
-            print(f"Probing 127.0.0.1:{port}...")
-            await ib.connectAsync("127.0.0.1", port, clientId=99, timeout=3.0)
-            print(f"  --> Successfully connected to port {port}!")
-            connected = True
-            connected_port = port
-            break
-        except Exception:
-            pass
-
-    if not connected:
-        print("\nCould not connect to IB Gateway / TWS on ports 7496, 4001, 7497, or 4002.")
-        print("Please check that TWS / IB Gateway is running with Socket API enabled.")
+    # Port: 7496 (TWS Live)
+    port = 7496
+    print(f"Connecting to 127.0.0.1:{port}...")
+    try:
+        await ib.connectAsync("127.0.0.1", port, clientId=99, timeout=2.0)
+        print(f"  --> Successfully connected to port {port}!")
+    except Exception as e:
+        print(f"\nCould not connect to IBKR TWS on port {port}: {e}")
+        print("Please check that TWS is running with Socket API enabled on port 7496.")
         return
 
     accounts = ib.managedAccounts()
     print(f"\n[OK] Managed Accounts: {accounts}")
 
     for acct in accounts:
-        print(f"\n{'='*60}\nAccount: {acct}\n{'='*60}")
+        print(f"\n{'=' * 60}\nAccount: {acct}\n{'=' * 60}")
 
         # Account balances
         values = ib.accountValues(account=acct)
@@ -64,10 +55,11 @@ async def test_connection():
             sec = c.secType
             curr = c.currency
             expiry = getattr(c, "lastTradeDateOrContractMonth", "") or ""
-            print(f"  {sym:<16} {sec:<6} Qty: {p.position:>10.4f}  AvgCost: {p.avgCost:>10.2f} {curr} {expiry}")
+            pos_str = f"Qty: {p.position:>10.4f}  AvgCost: {p.avgCost:>10.2f} {curr} {expiry}"
+            print(f"  {sym:<16} {sec:<6} {pos_str}")
 
     ib.disconnect()
-    print(f"\n[Done] Successfully verified connection via port {connected_port}.")
+    print(f"\n[Done] Successfully verified connection via port {port}.")
 
 
 if __name__ == "__main__":

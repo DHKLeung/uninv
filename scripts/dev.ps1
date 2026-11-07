@@ -31,24 +31,15 @@ Write-Host "==========================================================" -Foregro
 
 try {
     # ---------------------------------------------------------
-    # 1. Check TWS / IB Gateway Status
+    # 1. Check TWS Status (Port 7496)
     # ---------------------------------------------------------
     $twsLive = (Get-NetTCPConnection -LocalPort 7496 -ErrorAction SilentlyContinue) -ne $null
-    $twsPaper = (Get-NetTCPConnection -LocalPort 7497 -ErrorAction SilentlyContinue) -ne $null
-    $gwLive = (Get-NetTCPConnection -LocalPort 4001 -ErrorAction SilentlyContinue) -ne $null
-    $gwPaper = (Get-NetTCPConnection -LocalPort 4002 -ErrorAction SilentlyContinue) -ne $null
 
-    if ($gwLive) {
-        Write-Host "[IBKR] IB Gateway Live detected on port 4001" -ForegroundColor Green
-    } elseif ($gwPaper) {
-        Write-Host "[IBKR] IB Gateway Paper detected on port 4002" -ForegroundColor Green
-    } elseif ($twsLive) {
+    if ($twsLive) {
         Write-Host "[IBKR] TWS Live API detected on port 7496" -ForegroundColor Green
-    } elseif ($twsPaper) {
-        Write-Host "[IBKR] TWS Paper API detected on port 7497" -ForegroundColor Green
     } else {
-        Write-Host "[IBKR] Notice: IB Gateway / TWS not detected on 4001/4002/7496/7497." -ForegroundColor Yellow
-        Write-Host "       (Make sure IB Gateway or TWS is running with 'Enable ActiveX and Socket Clients' enabled)" -ForegroundColor Yellow
+        Write-Host "[IBKR] Notice: TWS not detected on port 7496." -ForegroundColor Yellow
+        Write-Host "       (FastAPI backend will start normally; TWS can be launched anytime)" -ForegroundColor Yellow
     }
 
     # Check Futubull OpenD Status

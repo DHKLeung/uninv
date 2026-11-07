@@ -74,7 +74,7 @@ We needed a socket server for the IBKR API. We compared the two official IBKR de
 ### Decision
 **Primary target: Standalone IB Gateway.**
 - Provides the lowest resource overhead and runs quietly in the background without UI clutter.
-- Because both speak the identical socket protocol, `uninv` automatically probes both port ranges (`4001`/`4002` for Gateway, `7496`/`7497` for TWS), allowing users to use whichever they prefer.
+- `uninv` targets TWS directly on default port `7496`. FastAPI starts independently of TWS; endpoints return clear diagnostics if TWS is offline and auto-reconnect once TWS is available.
 
 ---
 
@@ -168,4 +168,28 @@ However, the behavioral difference between IB Gateway and TWS when dismissed is 
 For passkey-enforced IBKR accounts on Windows 10 where the passkey resides in iOS iCloud Keychain:
 - **Trader Workstation (TWS)** is the winning client because of its built-in QR code fallback handler.
 - Once logged in, TWS exposes the exact same socket API as IB Gateway (listening on port `7496` for Live, `7497` for Paper).
-- `uninv` automatically detects port `7496`/`7497` and connects using `ib_async`.
+- `uninv` connects directly to TWS on port `7496` using `ib_async`. Backend startup is completely decoupled from TWS status.
+
+---
+
+## Trial 8: IBKR Socket API Derivation Quirk — `FuturesOption` & `Option` Multiplier in `averageCost`
+
+### The Problem
+When inspecting raw portfolio feeds from IBKR socket updates (`PortfolioItem` in `ib_async` / TWS):
+- **For Stocks & Crypto:** `item.averageCost` and `item.marketPrice` are both reported in per-share/unit currency ($115.58 vs $118.95). Multiplier is 1.0.
+- **For Futures Options (`FuturesOption`) and Equity Options (`Option`):**
+  - `item.marketPrice` is reported as the quoted premium points (e.g., `169.46` index points for an ES option, or `$100.74`/share for a GOOGL option).
+  - `item.averageCost` is reported as the **total currency cost for 1 full contract** (e.g., `$4,548.59` for 1 ES option contract = 90.9718 points × 50 multiplier; `$9,665.77` for 1 GOOGL option = $96.6577 × 100 multiplier).
+
+If left unscaled, `average_price` would be in total contract dollars (`$4,548.59`), while `market_price` is in index points (`169.46`), creating a 50x or 100x dimensional scale mismatch! Downstream calculations using `average_price * multiplier` would multiply the contract total by 50 again (yielding -$227,429 instead of -$4,548.59).
+
+### The Solution
+We implemented explicit contract type inspection using `isinstance(c, (FuturesOption, Option))` (with `secType in ("OPT", "FOP")` fallback) in `_normalize_average_price()`:
+- When dealing with derivative options where `multiplier > 1`:
+  $$\text{average\_price} = \frac{\text{averageCost}}{\text{multiplier}}$$
+- Both `average_price` and `market_price` are normalized into the exact same quotation units (points or $/share).
+- This allows the client application to apply uniform mathematical formulas across every asset class:
+  $$\text{cost\_basis} = \text{position} \times \text{average\_price} \times \text{multiplier}$$
+  $$\text{market\_value} = \text{position} \times \text{market\_price} \times \text{multiplier}$$
+  $$\text{unrealized\_pnl} = (\text{market\_price} - \text{average\_price}) \times \text{position} \times \text{multiplier}$$
+- Verified against live account data with exact 0.00 difference against IBKR's internal net liquidation and position values.

@@ -1,83 +1,126 @@
 """HTTP endpoints under /api/v1."""
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 
-from uninv_backend.data import ACCOUNTS, BROKERS, CASH_BALANCES, POSITIONS
-from uninv_backend.models import AccountMetadata, Broker, CashBalance, Position
+from uninv_backend.ibkr import ibkr_service
+from uninv_backend.models import AccountValues, Position, SupportingBroker
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1")
 
-
-@router.get("/brokers", response_model=list[Broker], summary="List brokers")
-async def get_brokers() -> list[Broker]:
-    """Return the available brokers."""
-    return BROKERS
+SUPPORTING_BROKERS = [
+    SupportingBroker(id="ibkr", name="Interactive Brokers"),
+]
 
 
 @router.get(
-    "/accounts/{broker_id}",
-    response_model=list[AccountMetadata],
+    "/supporting-brokers",
+    response_model=list[SupportingBroker],
+    summary="List supported brokers",
+)
+def get_supporting_brokers() -> list[SupportingBroker]:
+    """Return the list of brokers supported by this backend."""
+    return SUPPORTING_BROKERS
+
+
+@router.get(
+    "/accounts",
+    response_model=list[str],
     summary="List accounts for a broker",
 )
-async def get_accounts(broker_id: str) -> list[AccountMetadata]:
-    """Return account metadata for the specified broker (e.g. 'ibkr-hk', 'futubull-hk')."""
-    if broker_id not in ACCOUNTS:
-        raise HTTPException(status_code=404, detail=f"Broker '{broker_id}' not found")
-    return ACCOUNTS[broker_id]
+def get_accounts(
+    broker_id: Annotated[
+        str,
+        Query(
+            description="Broker identifier, e.g. 'ibkr'",
+            examples=["ibkr"],
+        ),
+    ],
+) -> list[str]:
+    """Return pure account IDs for the specified broker."""
+    if broker_id != "ibkr":
+        raise HTTPException(status_code=404, detail=f"Broker '{broker_id}' not supported")
+
+    try:
+        return ibkr_service.get_accounts()
+    except ConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except Exception as e:
+        logger.exception("Error fetching IBKR accounts")
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get(
-    "/cash-balance/{broker_id}",
-    response_model=CashBalance | list[CashBalance],
-    summary="Get cash balance for an account or broker",
+    "/account-values",
+    response_model=AccountValues,
+    summary="Get key account values and cash balance breakdown",
 )
-async def get_cash_balance(
-    broker_id: str,
+def get_account_values(
+    broker_id: Annotated[
+        str,
+        Query(
+            description="Broker identifier, e.g. 'ibkr'",
+            examples=["ibkr"],
+        ),
+    ],
     account_id: Annotated[
-        str | None, Query(description="Filter by specific broker account ID")
-    ] = None,
-) -> CashBalance | list[CashBalance]:
-    """Return cash balance for the specified broker and account."""
-    if broker_id not in CASH_BALANCES:
-        raise HTTPException(status_code=404, detail=f"Broker '{broker_id}' not found")
+        str,
+        Query(
+            description="Broker account ID, e.g. 'U16110728'",
+            examples=["U16110728"],
+        ),
+    ],
+) -> AccountValues:
+    """Return raw account margins and multi-currency cash balances."""
+    if broker_id != "ibkr":
+        raise HTTPException(status_code=404, detail=f"Broker '{broker_id}' not supported")
 
-    balances = CASH_BALANCES[broker_id]
-    if account_id is not None:
-        for b in balances:
-            if b.account_id == account_id:
-                return b
-        raise HTTPException(
-            status_code=404,
-            detail=f"Account '{account_id}' not found for broker '{broker_id}'",
-        )
-    return balances
+    try:
+        return ibkr_service.get_account_values(account_id)
+    except ConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        logger.exception(f"Error fetching IBKR account values for {account_id}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get(
-    "/positions/{broker_id}",
+    "/positions",
     response_model=list[Position],
-    summary="List positions for a broker",
+    summary="List positions for a broker account",
 )
-async def get_positions(
-    broker_id: str,
+def get_positions(
+    broker_id: Annotated[
+        str,
+        Query(
+            description="Broker identifier, e.g. 'ibkr'",
+            examples=["ibkr"],
+        ),
+    ],
     account_id: Annotated[
-        str | None, Query(description="Filter by specific broker account ID")
-    ] = None,
+        str,
+        Query(
+            description="Broker account ID, e.g. 'U16110728'",
+            examples=["U16110728"],
+        ),
+    ],
 ) -> list[Position]:
-    """Return positions for the specified broker, optionally filtered by account_id."""
-    if broker_id not in POSITIONS:
-        raise HTTPException(status_code=404, detail=f"Broker '{broker_id}' not found")
+    """Return raw holding positions for the specified broker and account."""
+    if broker_id != "ibkr":
+        raise HTTPException(status_code=404, detail=f"Broker '{broker_id}' not supported")
 
-    positions = POSITIONS[broker_id]
-    if account_id is not None:
-        valid_account_ids = {a.account_id for a in ACCOUNTS.get(broker_id, [])}
-        if account_id not in valid_account_ids:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Account '{account_id}' not found for broker '{broker_id}'",
-            )
-        positions = [p for p in positions if p.account_id == account_id]
-
-    return positions
+    try:
+        return ibkr_service.get_positions(account_id)
+    except ConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        logger.exception(f"Error fetching IBKR positions for {account_id}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
