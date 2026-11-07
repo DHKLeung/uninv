@@ -16,3 +16,5 @@ This folder documents the external broker gateways supported by `uninv`.
 
 - [`ib_gateway/instruction.md`](ib_gateway/instruction.md): Interactive Brokers Gateway & TWS setup guide.
 - `futu_gateway/`: Futu OpenD setup guide (upcoming).
+
+For a complete breakdown of past gateway trials and architectural post-mortems, see [`docs/trials_and_errors.md`](../docs/trials_and_errors.md).

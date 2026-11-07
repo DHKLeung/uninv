@@ -3,6 +3,8 @@
 These are the design decisions so far and the reasons behind them. Update this file whenever
 one of them changes.
 
+> **Engineering Journal:** For the detailed log of technical trials, dead ends, and why specific approaches (like Client Portal Gateway) were abandoned, see [trials_and_errors.md](trials_and_errors.md).
+
 ## 1. Python owns the business logic; Rust stays thin
 
 Most broker SDKs and financial libraries (IBKR `ib_async`, Futu OpenAPI, pandas, options

@@ -19,6 +19,7 @@ strategy builder, live prices, etc. (roadmap in `README.md`).
 - `gateways/`: Documentation and setup guides for external broker daemons (`gateways/ib_gateway/instruction.md`). Broker gateways run standalone on the host OS.
 - `docs/architecture.md`: design decisions and the reasons for them. Update it when a decision
   changes.
+- `docs/trials_and_errors.md`: log of technical trials, dead ends, and why specific approaches failed.
 - `scripts/dev.ps1`: runs backend + desktop app on Windows (`-Browser` for browser UI, `-ServicesOnly` for headless backend).
 - `scripts/dev.cmd`: Windows cmd/PowerShell wrapper (one-click double-clickable launcher).
 - `scripts/dev.sh`: macOS/Linux equivalent for bash/zsh (`--browser`, `--services-only`).
