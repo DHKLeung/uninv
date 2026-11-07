@@ -141,9 +141,31 @@ The user's IBKR passkey is stored on their **iPhone (iCloud Keychain)**, not on 
 ### The Enforced Security Model (No Legacy 2FA Fallback)
 Important fact: Once a passkey is registered on an IBKR account, **IBKR strictly enforces Passkeys only**. Legacy 2FA methods (SMS, push notification IB Key, and Challenge-Response) are disabled by IBKR's security policy.
 
-### The Definitive Solution: Enroll Windows Hello as a Second Passkey
-IBKR supports registering **up to 3 to 5 passkeys** per account. To solve the Windows 10 desktop app limitation:
-1. **Log in via Web Browser:** Open Google Chrome or Microsoft Edge on your PC and navigate to `https://www.interactivebrokers.com`. Browsers have built-in WebAuthn QR code scanners: scan the QR code with your iPhone to log into the web portal.
-2. **Add Windows Hello:** Navigate to **User Menu > Settings > Security > Secure Login System (SLS) > Passkeys** and click **"Add a Passkey"**.
-3. **Register "This Device":** Select your local PC / Windows Hello and confirm with your Windows PIN or fingerprint.
-4. **Log Into IB Gateway:** Open IB Gateway and log in. Windows Security will prompt for your local **Windows Hello PIN**, authenticating immediately without needing an iPhone or USB key.
+---
+
+## Trial 7: The TWS Breakthrough — "Cancel USB & Scan QR Code" Workflow
+
+### The Discovery
+When logging into **Trader Workstation (TWS)** on Windows 10, entering credentials initially triggers the exact same Windows Security prompt:
+> *"Making sure it's you: Insert your security key into the USB port."*
+
+However, the behavioral difference between IB Gateway and TWS when dismissed is crucial:
+
+| Action on "Insert USB key" prompt | IB Gateway | Trader Workstation (TWS) |
+| :--- | :--- | :--- |
+| **Clicking "Cancel"** | Aborts login entirely with no alternatives. | **Catches cancellation and reveals "Use QR code for iPhone"!** |
+| **iPhone Passkey Support** | Broken (trapped in USB prompt). | **Fully working via on-screen QR code scan.** |
+
+### The Working Authentication Sequence in TWS
+1. Launch TWS and enter username and password.
+2. When Windows Security pops up asking to *"Insert a security key (USB)"*, click **Cancel**.
+3. TWS immediately reveals its fallback options: click **"Use QR code for iPhone"**.
+4. A dynamic QR code appears directly on your PC monitor.
+5. Point your iPhone camera at the QR code, tap the prompt, and approve with **Face ID**.
+6. **TWS logs in immediately!**
+
+### Architectural Takeaway
+For passkey-enforced IBKR accounts on Windows 10 where the passkey resides in iOS iCloud Keychain:
+- **Trader Workstation (TWS)** is the winning client because of its built-in QR code fallback handler.
+- Once logged in, TWS exposes the exact same socket API as IB Gateway (listening on port `7496` for Live, `7497` for Paper).
+- `uninv` automatically detects port `7496`/`7497` and connects using `ib_async`.

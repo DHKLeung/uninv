@@ -37,12 +37,10 @@ For these reasons, **Client Portal Gateway was permanently abandoned**.
 └────────────────────────────────────────┘
 ```
 
-### Why IB Gateway over TWS?
-- **Lightweight:** IB Gateway contains the exact same communication engine as Trader Workstation (TWS) without the heavy charting, newsfeeds, and GUI components. It uses a fraction of the RAM and CPU.
-- **Passkey Support:** Natively supports biometric/FIDO2 passkeys, Windows Hello, Touch ID (macOS), and IBKR Mobile Key.
-- **Cross-Platform:** Available on **Windows**, **macOS**, and **Linux**.
-
-*(Note: If you already have full TWS installed and running, `uninv` can connect to TWS just as easily by pointing to port 7496/7497).*
+### Why IB Gateway vs TWS?
+- **IB Gateway:** Contains the exact same communication engine as TWS without the heavy charting, newsfeeds, and GUI components. Uses ~150 MB RAM (vs ~2 GB for TWS). Ideal for headless or low-resource use.
+- **Trader Workstation (TWS):** Recommended on Windows 10 if your passkey is on an iPhone. When TWS prompts for a USB security key, clicking **Cancel** reveals the built-in **"Use QR code for iPhone"** fallback, allowing seamless login via Face ID.
+- **Both use the identical Socket API:** `uninv` automatically probes both IB Gateway (`4001`/`4002`) and TWS (`7496`/`7497`). You can use whichever is running.
 
 ---
 
