@@ -12,24 +12,24 @@ ACCOUNTS: dict[str, list[AccountMetadata]] = {
         AccountMetadata(
             account_id="U16110728",
             broker_id="ibkr-hk",
-            alias="IBKR-HK(0728)",
+            alias="IBKR-HK (0728)",
         ),
     ],
     "futubull-hk": [
         AccountMetadata(
             account_id="1001279250287283",
             broker_id="futubull-hk",
-            alias="Futubull-HK(7283)",
+            alias="Futubull-HK (7283)",
         ),
         AccountMetadata(
             account_id="1001281798927612",
             broker_id="futubull-hk",
-            alias="Futubull-HK(7612)",
+            alias="Futubull-HK (7612)",
         ),
         AccountMetadata(
             account_id="1001272756530281",
             broker_id="futubull-hk",
-            alias="Futubull-HK(0281)",
+            alias="Futubull-HK (0281)",
         ),
     ],
 }

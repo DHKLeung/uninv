@@ -40,7 +40,7 @@ def test_accounts_ibkr_endpoint(client: TestClient) -> None:
     assert accounts[0] == {
         "account_id": "U16110728",
         "broker_id": "ibkr-hk",
-        "alias": "IBKR-HK(0728)",
+        "alias": "IBKR-HK (0728)",
     }
 
 
@@ -50,9 +50,9 @@ def test_accounts_futubull_endpoint(client: TestClient) -> None:
     accounts = resp.json()
     assert len(accounts) == 3
     assert [a["alias"] for a in accounts] == [
-        "Futubull-HK(7283)",
-        "Futubull-HK(7612)",
-        "Futubull-HK(0281)",
+        "Futubull-HK (7283)",
+        "Futubull-HK (7612)",
+        "Futubull-HK (0281)",
     ]
     assert [a["account_id"] for a in accounts] == [
         "1001279250287283",

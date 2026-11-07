@@ -119,7 +119,7 @@ Interactive docs: <http://127.0.0.1:8000/docs> (while the backend is running).
 |---|---|---|
 | GET | `/health` | Liveness check |
 | GET | `/api/v1/brokers` | Connected brokers (`ibkr-hk`, `futubull-hk`) |
-| GET | `/api/v1/accounts/{broker_id}` | Accounts metadata under broker (e.g. `IBKR-HK(0728)`, `Futubull-HK(7283)`) |
+| GET | `/api/v1/accounts/{broker_id}` | Accounts metadata under broker (e.g. `IBKR-HK (0728)`, `Futubull-HK (7283)`) |
 | GET | `/api/v1/positions/{broker_id}?account_id=` | Broker positions (stocks, ETFs, futures, options, futures options) |
 
 ## Common tasks
