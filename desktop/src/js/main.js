@@ -6,6 +6,7 @@
 
 import { apiGet, backendUrl } from "./api.js";
 import {
+  convertCurrency,
   esc,
   formatMoney,
   formatPct,
@@ -48,7 +49,7 @@ async function load() {
     );
     const accountResponses = await Promise.all(accountPromises);
 
-    // 3. Fetch unified snapshots for each account
+    // 3. Prepare snapshot fetch promises
     const snapshotPromises = [];
     for (const resp of accountResponses) {
       if (resp.asof) {
@@ -66,17 +67,34 @@ async function load() {
       }
     }
 
-    state.snapshots = await Promise.all(snapshotPromises);
-
-    // 4. Update FX rate for selected currency if non-USD
+    // 4. Concurrently pull live FX rate for the active display currency
+    let activeFxPromise = Promise.resolve();
     if (state.currency !== "USD") {
-      try {
-        const fx = await apiGet(`/api/v1/fx?base=USD&quote=${encodeURIComponent(state.currency)}`);
-        setFxRate(state.currency, fx.rate);
-      } catch (e) {
-        console.warn("Could not refresh live FX rate:", e);
-      }
+      activeFxPromise = apiGet(`/api/v1/fx?base=USD&quote=${encodeURIComponent(state.currency)}`)
+        .then((fx) => {
+          setFxRate(state.currency, fx.rate);
+        })
+        .catch((e) => {
+          console.warn(`Could not refresh live FX rate for ${state.currency}:`, e);
+        });
     }
+
+    // Await both snapshot data AND live FX rate in parallel
+    const [snapshots] = await Promise.all([
+      Promise.all(snapshotPromises),
+      activeFxPromise,
+    ]);
+    state.snapshots = snapshots;
+
+    // 5. Asynchronously pre-fetch / warm other major currencies in background
+    const otherCurrencies = ["HKD", "EUR", "GBP"].filter((c) => c !== state.currency);
+    Promise.all(
+      otherCurrencies.map((c) =>
+        apiGet(`/api/v1/fx?base=USD&quote=${encodeURIComponent(c)}`)
+          .then((fx) => setFxRate(c, fx.rate))
+          .catch(() => null)
+      )
+    ).catch(() => null);
 
     setBackendStatus(true);
     hideError();
@@ -154,31 +172,52 @@ function renderKpis() {
   const ccy = state.currency;
   const filteredSnaps = getFilteredSnapshots();
 
-  const netLiqUsd = filteredSnaps.reduce((acc, s) => acc + (s.account_values?.net_liquidation ?? 0), 0);
-  const positionValUsd = filteredSnaps.reduce((acc, s) => acc + (s.account_values?.gross_position_value ?? 0), 0);
-  const cashValUsd = filteredSnaps.reduce((acc, s) => acc + (s.account_values?.cash_balance ?? 0), 0);
-  const totalUnrealizedPnlUsd = filteredSnaps.reduce((acc, s) => acc + (s.account_values?.unrealized_pnl ?? 0), 0);
-  const availFundsUsd = filteredSnaps.reduce((acc, s) => acc + (s.account_values?.available_funds ?? 0), 0);
-  const buyingPowerUsd = filteredSnaps.reduce((acc, s) => acc + (s.account_values?.buying_power ?? 0), 0);
+  const netLiqConverted = filteredSnaps.reduce(
+    (acc, s) => acc + convertCurrency(s.account_values?.net_liquidation ?? 0, s.account_values?.currency || "USD", ccy),
+    0
+  );
+  const positionValConverted = filteredSnaps.reduce(
+    (acc, s) => acc + convertCurrency(s.account_values?.gross_position_value ?? 0, s.account_values?.currency || "USD", ccy),
+    0
+  );
+  const cashValConverted = filteredSnaps.reduce(
+    (acc, s) => acc + convertCurrency(s.account_values?.cash_balance ?? 0, s.account_values?.currency || "USD", ccy),
+    0
+  );
+  const totalUnrealizedPnlConverted = filteredSnaps.reduce(
+    (acc, s) => acc + convertCurrency(s.account_values?.unrealized_pnl ?? 0, s.account_values?.currency || "USD", ccy),
+    0
+  );
+  const availFundsConverted = filteredSnaps.reduce(
+    (acc, s) => acc + convertCurrency(s.account_values?.available_funds ?? 0, s.account_values?.currency || "USD", ccy),
+    0
+  );
+  const buyingPowerConverted = filteredSnaps.reduce(
+    (acc, s) => acc + convertCurrency(s.account_values?.buying_power ?? 0, s.account_values?.currency || "USD", ccy),
+    0
+  );
 
   const totalPositions = getAllFilteredPositions();
-  const totalCostBasis = totalPositions.reduce((acc, p) => acc + (p.cost_basis ?? 0), 0);
-  const totalPnlPct = totalCostBasis !== 0 ? totalUnrealizedPnlUsd / Math.abs(totalCostBasis) : 0;
+  const totalCostBasisConverted = totalPositions.reduce(
+    (acc, p) => acc + convertCurrency(p.cost_basis ?? 0, p.currency || "USD", ccy),
+    0
+  );
+  const totalPnlPct = totalCostBasisConverted !== 0 ? totalUnrealizedPnlConverted / Math.abs(totalCostBasisConverted) : 0;
 
-  $("#kpi-netliq").textContent = formatMoney(netLiqUsd, ccy);
-  $("#kpi-positions").textContent = formatMoney(positionValUsd, ccy);
-  $("#kpi-cash").textContent = formatMoney(cashValUsd, ccy);
+  $("#kpi-netliq").textContent = formatMoney(netLiqConverted, ccy);
+  $("#kpi-positions").textContent = formatMoney(positionValConverted, ccy);
+  $("#kpi-cash").textContent = formatMoney(cashValConverted, ccy);
 
   const pnlEl = $("#kpi-pnl");
-  pnlEl.textContent = formatSignedMoney(totalUnrealizedPnlUsd, ccy);
-  pnlEl.className = `kpi-value ${pnlClass(totalUnrealizedPnlUsd)}`;
+  pnlEl.textContent = formatSignedMoney(totalUnrealizedPnlConverted, ccy);
+  pnlEl.className = `kpi-value ${pnlClass(totalUnrealizedPnlConverted)}`;
 
   const pnlPctEl = $("#kpi-pnl-pct");
   pnlPctEl.textContent = formatPct(totalPnlPct, { signed: true });
-  pnlPctEl.className = `kpi-sub ${pnlClass(totalUnrealizedPnlUsd)}`;
+  pnlPctEl.className = `kpi-sub ${pnlClass(totalUnrealizedPnlConverted)}`;
 
-  $("#kpi-avail").textContent = formatMoney(availFundsUsd, ccy);
-  $("#kpi-buyingpower").textContent = formatMoney(buyingPowerUsd, ccy);
+  $("#kpi-avail").textContent = formatMoney(availFundsConverted, ccy);
+  $("#kpi-buyingpower").textContent = formatMoney(buyingPowerConverted, ccy);
 }
 
 function renderAccounts() {
@@ -203,20 +242,20 @@ function renderAccounts() {
         <div class="account-metrics-grid">
           <div>
             <div class="metric-label">NET LIQUIDATION VALUE</div>
-            <div class="metric-value font-mono strong">${formatMoney(av.net_liquidation, ccy)}</div>
+            <div class="metric-value font-mono strong">${formatMoney(convertCurrency(av.net_liquidation, av.currency, ccy), ccy)}</div>
           </div>
           <div class="text-right">
             <div class="metric-label">POSITION VALUE</div>
-            <div class="metric-value font-mono">${formatMoney(av.gross_position_value, ccy)}</div>
+            <div class="metric-value font-mono">${formatMoney(convertCurrency(av.gross_position_value, av.currency, ccy), ccy)}</div>
           </div>
           <div>
             <div class="metric-label">CASH BALANCE</div>
-            <div class="metric-value font-mono ${pnlClass(av.cash_balance)}">${formatMoney(av.cash_balance, ccy)}</div>
+            <div class="metric-value font-mono ${pnlClass(av.cash_balance)}">${formatMoney(convertCurrency(av.cash_balance, av.currency, ccy), ccy)}</div>
           </div>
           <div class="text-right">
             <div class="metric-label">UNREALISED P&amp;L</div>
             <div class="metric-value font-mono ${pnlClass(av.unrealized_pnl)}">
-              ${formatSignedMoney(av.unrealized_pnl, ccy)}
+              ${formatSignedMoney(convertCurrency(av.unrealized_pnl, av.currency, ccy), ccy)}
               <span class="metric-pct">(${formatPct(pnlPct, { signed: true })})</span>
             </div>
           </div>
@@ -281,14 +320,14 @@ function renderCashBalances() {
     }))
   );
 
-  const totalCashUsd = filteredSnaps.reduce(
-    (acc, s) => acc + (s.account_values?.cash_balance ?? 0.0),
+  const totalCashConverted = filteredSnaps.reduce(
+    (acc, s) => acc + convertCurrency(s.account_values?.cash_balance ?? 0.0, s.account_values?.currency || "USD", ccy),
     0
   );
 
   $("#cash-balances-caption").textContent = `${filteredSnaps.length} ${
     filteredSnaps.length === 1 ? "account" : "accounts"
-  } · ${formatMoney(totalCashUsd, ccy)} total cash`;
+  } · ${formatMoney(totalCashConverted, ccy)} total cash`;
 
   const tbody = $("#cash-table tbody");
   tbody.innerHTML = allCashItems.length
@@ -309,7 +348,7 @@ function renderCashBalances() {
               ${formatMoney(c.amount, c.currency)}
             </td>
             <td class="num font-mono strong ${pnlClass(c.amount)}">
-              ${formatMoney(c.amount, ccy)}
+              ${formatMoney(convertCurrency(c.amount, c.currency, ccy), ccy)}
             </td>
           </tr>`;
         })
@@ -343,8 +382,11 @@ function renderPositions() {
     return String(x).localeCompare(String(y)) * dir;
   });
 
-  const totalFilteredValueUsd = rows.reduce((acc, p) => acc + (p.market_value ?? 0), 0);
-  $("#positions-count").textContent = `${rows.length} positions · ${formatMoney(totalFilteredValueUsd, ccy)}`;
+  const totalFilteredValue = rows.reduce(
+    (acc, p) => acc + convertCurrency(p.market_value ?? 0, p.currency || "USD", ccy),
+    0
+  );
+  $("#positions-count").textContent = `${rows.length} positions · ${formatMoney(totalFilteredValue, ccy)}`;
 
   for (const th of document.querySelectorAll("#positions-table th[data-sort]")) {
     th.classList.toggle("sorted", th.dataset.sort === key);
@@ -375,15 +417,15 @@ function renderPositions() {
             <td>${exchangeBadge}</td>
             <td>${expiry}</td>
             <td class="num font-mono">${formatQty(p.position)}</td>
-            <td class="num font-mono">${formatMoney(p.avg_price, ccy)}</td>
-            <td class="num font-mono">${formatMoney(p.mark_price, ccy)}</td>
-            <td class="num font-mono">${formatMoney(p.cost_basis, ccy)}</td>
-            <td class="num font-mono strong">${formatMoney(p.market_value, ccy)}</td>
+            <td class="num font-mono">${formatMoney(p.avg_price, p.currency)}</td>
+            <td class="num font-mono">${formatMoney(p.mark_price, p.currency)}</td>
+            <td class="num font-mono">${formatMoney(convertCurrency(p.cost_basis, p.currency, ccy), ccy)}</td>
+            <td class="num font-mono strong">${formatMoney(convertCurrency(p.market_value, p.currency, ccy), ccy)}</td>
             <td class="num"><span class="currency-badge">${esc(p.currency)}</span></td>
             <td class="num font-mono ${pnlClass(p.unrealized_pnl)}">
               ${
                 p.unrealized_pnl != null
-                  ? `<div>${formatSignedMoney(p.unrealized_pnl, ccy)}</div>
+                  ? `<div>${formatSignedMoney(convertCurrency(p.unrealized_pnl, p.currency, ccy), ccy)}</div>
                      <div class="small-pct">${formatPct(pnlPct, { signed: true })}</div>`
                   : '<span class="muted">—</span>'
               }
@@ -403,15 +445,16 @@ function wireEvents() {
 
   $("#currency-select").addEventListener("change", async (e) => {
     state.currency = e.target.value;
+    render();
     if (state.currency !== "USD") {
       try {
         const fx = await apiGet(`/api/v1/fx?base=USD&quote=${encodeURIComponent(state.currency)}`);
         setFxRate(state.currency, fx.rate);
+        render();
       } catch (err) {
         console.warn("Could not load FX rate:", err);
       }
     }
-    render();
   });
 
   $("#search").addEventListener("input", (e) => {

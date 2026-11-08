@@ -32,16 +32,34 @@ export function setFxRate(currency, rate) {
 }
 
 /**
- * Format a USD-based numeric value into the active display currency.
+ * Convert an amount from fromCurrency to toCurrency via USD base rates.
+ * FX_RATES stores 1 USD = rate * Currency (e.g. USD: 1.0, HKD: 7.84, EUR: 0.89).
  */
-export function formatMoney(valInUsd, currency = "USD") {
-  if (valInUsd === null || valInUsd === undefined || Number.isNaN(valInUsd)) {
+export function convertCurrency(amount, fromCurrency = "USD", toCurrency = "USD") {
+  if (amount === null || amount === undefined || Number.isNaN(amount)) {
+    return 0;
+  }
+  const fromCcy = (fromCurrency || "USD").toUpperCase();
+  const toCcy = (toCurrency || "USD").toUpperCase();
+  if (fromCcy === toCcy) {
+    return amount;
+  }
+  const fromRate = FX_RATES[fromCcy] ?? 1.0;
+  const toRate = FX_RATES[toCcy] ?? 1.0;
+  // Convert from fromCcy to USD base, then from USD to toCcy
+  return (amount / fromRate) * toRate;
+}
+
+/**
+ * Format a numeric value in currency (with symbol and 2 decimal places).
+ */
+export function formatMoney(amount, currency = "USD") {
+  if (amount === null || amount === undefined || Number.isNaN(amount)) {
     return '<span class="muted">—</span>';
   }
-  const rate = FX_RATES[currency] ?? 1.0;
-  const sym = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
-  const converted = valInUsd * rate;
-  const absVal = Math.abs(converted);
+  const targetCcy = (currency || "USD").toUpperCase();
+  const absVal = Math.abs(amount);
+  const sym = CURRENCY_SYMBOLS[targetCcy] ?? `${targetCcy} `;
 
   const numStr = absVal.toLocaleString("en-GB", {
     minimumFractionDigits: 2,
@@ -49,28 +67,27 @@ export function formatMoney(valInUsd, currency = "USD") {
   });
 
   const formatted = `${sym}${numStr}`;
-  return converted < 0 ? `-${formatted}` : formatted;
+  return amount < 0 ? `-${formatted}` : formatted;
 }
 
 /**
- * Format signed money (+ or -) with symbol.
+ * Format signed money (+ or -) in currency with symbol.
  */
-export function formatSignedMoney(valInUsd, currency = "USD") {
-  if (valInUsd === null || valInUsd === undefined || Number.isNaN(valInUsd)) {
+export function formatSignedMoney(amount, currency = "USD") {
+  if (amount === null || amount === undefined || Number.isNaN(amount)) {
     return '<span class="muted">—</span>';
   }
-  const rate = FX_RATES[currency] ?? 1.0;
-  const sym = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
-  const converted = valInUsd * rate;
-  const absVal = Math.abs(converted);
+  const targetCcy = (currency || "USD").toUpperCase();
+  const absVal = Math.abs(amount);
+  const sym = CURRENCY_SYMBOLS[targetCcy] ?? `${targetCcy} `;
 
   const numStr = absVal.toLocaleString("en-GB", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
 
-  if (converted > 0.004) return `+${sym}${numStr}`;
-  if (converted < -0.004) return `-${sym}${numStr}`;
+  if (amount > 0.004) return `+${sym}${numStr}`;
+  if (amount < -0.004) return `-${sym}${numStr}`;
   return `${sym}${numStr}`;
 }
 
