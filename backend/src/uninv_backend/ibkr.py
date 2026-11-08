@@ -5,6 +5,7 @@ import contextlib
 import logging
 import math
 import random
+import socket
 from datetime import UTC, datetime
 
 from ib_async import IB, Contract, Forex, FuturesOption, Option
@@ -184,16 +185,44 @@ class IBKRService:
             f"enabled on port {self.port}."
         ) from last_error
 
-    async def _ensure_connected(self) -> None:
-        """Compatibility alias for ensure_connected."""
-        await self.ensure_connected()
+    def set_gateway(self, host: str | None = None, port: int | None = None) -> None:
+        """Update TWS gateway host/port and disconnect to force reconnection."""
+        changed = False
+        if host and self.host != host.strip():
+            self.host = host.strip()
+            changed = True
+        if port and self.port != port:
+            self.port = port
+            changed = True
+        if changed and self._ib.isConnected():
+            with contextlib.suppress(Exception):
+                self._ib.disconnect()
+
+    def set_port(self, port: int) -> None:
+        """Update TWS gateway port and disconnect to force reconnection on new port."""
+        self.set_gateway(port=port)
+
+    async def test_connection(self) -> tuple[bool, str]:
+        """Test if IBKR TWS / Gateway is reachable via TCP probe and API handshake."""
+        try:
+            with socket.create_connection((self.host, self.port), timeout=0.5):
+                pass
+        except OSError as e:
+            return False, f"Cannot reach IBKR gateway on {self.host}:{self.port} ({e})"
+
+        try:
+            await self.ensure_connected()
+            return True, f"Connected to IBKR on {self.host}:{self.port}"
+        except Exception as e:
+            return False, f"Port open on {self.host}:{self.port} but handshake failed: {e}"
 
     async def get_accounts(self) -> tuple[list[str], datetime]:
-        """Return list of managed account IDs with query timestamp."""
-        asof = datetime.now(UTC)
+        """Return list of managed account IDs with query timestamp after query."""
         await self.ensure_connected()
         try:
-            return list(self._ib.managedAccounts()), asof
+            accounts = list(self._ib.managedAccounts())
+            asof = datetime.now(UTC)
+            return accounts, asof
         except Exception as e:
             self._ib.disconnect()
             raise ConnectionError(f"Error communicating with IBKR TWS: {e}") from e
@@ -230,6 +259,9 @@ class IBKRService:
                 with contextlib.suppress(ValueError):
                     totals[ACCOUNT_VAL_TAG_MAP[tag]] = float(val_str)
 
+        # Enforce Cash Balance + Gross Position Value == Net Liquidation Value
+        cash_balance = totals.get("net_liquidation", 0.0) - totals.get("gross_position_value", 0.0)
+
         cash_balances = [
             CashBalanceItem(currency=c, amount=amt)
             for c, amt in sorted(cash_map.items(), key=lambda x: x[0].value)
@@ -238,6 +270,7 @@ class IBKRService:
 
         return AccountValues(
             currency=default_currency,
+            cash_balance=cash_balance,
             cash_balances=cash_balances,
             **totals,
         )
@@ -351,7 +384,7 @@ class IBKRService:
                     currency=currency,
                     exchange=exchange,
                     sec_type=sec_type,
-                    last_trade_date=last_trade,
+                    last_trading_date=last_trade,
                     strike=strike,
                     option_type=option_type,
                 )
@@ -372,11 +405,11 @@ class IBKRService:
 
     async def get_snapshot(self, account_id: str) -> BrokerAccountSnapshot:
         """Return combined account snapshot containing account values and open positions."""
-        asof = datetime.now(UTC)
         await self.ensure_connected()
         try:
             values = self._parse_account_values(account_id)
             positions = await self._build_positions(account_id)
+            asof = datetime.now(UTC)
             return BrokerAccountSnapshot(
                 broker_id="ibkr",
                 account_id=account_id,

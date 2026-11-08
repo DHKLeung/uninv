@@ -1,39 +1,43 @@
 # AGENTS.md: desktop (Tauri 2 + plain JS)
 
 Rules for `desktop/`. Root `AGENTS.md` applies too. **The user doesn't know Rust**, so explain
-any Rust change in plain terms.
+any Rust change in plain terms with Python comparisons.
 
 ## Layout
 - `src/`: the UI, served as-is (Tauri `frontendDist: "../src"`, no `devUrl`, no build step).
-  - `index.html`, `styles.css` (dark theme, CSS variables in `:root`)
-  - `js/api.js`: `apiGet(path)`: uses Tauri `invoke("api_get")` inside the app and falls back
-    to `fetch("http://127.0.0.1:8000"+path)` in a normal browser. **All backend calls go
-    through it.**
-  - `js/format.js`: money / pct / qty formatting and `esc()` for HTML escaping.
-  - `js/main.js`: consumes `/api/v1/supporting-brokers`, `/api/v1/accounts`, `/api/v1/snapshot`,
-    and `/api/v1/fx`. Keeps reactive `state`, renders headline KPIs, account cards, filter pills,
-    positions table, and multi-currency cash balances. Filtering and sorting happen in the browser.
+  - `index.html`: structured into Global Headbar, Sidebar (Portfolio, Settings, About), and main view containers.
+  - `styles.css`: dark theme design system (`:root` variables), hairline borders, stacked cells, and modal/tooltip styles.
+  - `assets/`: Purple square app icons (`icon.svg`, `icon.png`, `favicon.png`).
+  - `js/api.js`: `apiGet(path)` and `apiPost(path, body)`. Uses Tauri `invoke("api_get")` / `invoke("api_post")` inside the app and falls back to `fetch()` in browser mode.
+  - `js/format.js`: money, pct, and quantity formatting (`formatQty` preserves full fractional precision up to 20 decimals), `convertAmount` for FX, and `esc()` for HTML escaping.
+  - `js/main.js`: application state manager and DOM renderer:
+    - Global state: `brokers`, `accounts`, `snapshots`, `fxMatrix`, `currency`, `selectedTile`, `settings`.
+    - Portfolio Page:
+      1. **Accounts Selector:** Horizontal tiles ("All Accounts" with account + position count, plus individual accounts).
+      2. **Account Values Board:** 6 structured cards across 2 rows. When "All Accounts" is active, Maintenance Margin and Excess Liquidity display `—`, while other metrics aggregate.
+      3. **Holdings:**
+         - **Positions Table (12 columns):** `Broker / Account`, `Instrument / Symbol`, `Type / Exchange`, `Position`, `Avg Price`, `Mark Price`, `Cost Basis`, `Market Value`, `Last Trading Date`, `Unrealised P&L`, `Weight`, `Currency`. Rows are never aggregated.
+         - **Cash Balances Table (4 columns):** `Broker / Account`, `Currency`, `Amount (RAW)`, `AMOUNT (CONVERTED)`.
+    - Settings Page:
+      - Broker Gateways section with Host/IP and Port configuration per broker.
+      - Edit and Save controls (inputs disabled until Edit is clicked).
+      - Live connection testing via `/api/v1/broker-connection-test` with status badges.
+    - About Page: displays app icon, `uninv`, `Unified Investing`, description, Version: `1.0.0`, Author: `DHKLeung`.
 - `src-tauri/`: Rust shell.
-  - `src/lib.rs`: `Backend` state (reqwest client and base URL from `UNINV_BACKEND_URL` / `RwLock`);
-    commands `api_get` (generic GET proxy, only `/api/*` and `/health` allowed), `backend_url`,
-    and `set_backend_url` (allows mobile client or remote UI to point to any host).
-  - `tauri.conf.json`: window, CSP, bundle and icons. `capabilities/default.json`:
-    `core:default` only.
-  - `icons/` were generated from `../app-icon.png`; regenerate with
-    `cargo tauri icon ../app-icon.png`.
+  - `src/lib.rs`: `Backend` state (reqwest client and base URL from `UNINV_BACKEND_URL` / `RwLock`); commands `api_get`, `api_post`, `backend_url`, and `set_backend_url`.
+  - `tauri.conf.json`: window config, CSP, bundle, and icons.
+  - `icons/`: purple square app icon in `.ico`, `.png`, and multiple resolutions.
 
 ## Platforms
 - Cross-platform desktop: Windows (WebView2), macOS (WebKit), Linux (WebKitGTK).
 
 ## Conventions
-- Tauri **2.x** only (`tauri = "2"`). Tauri 3 is in alpha; don't upgrade.
-- No Node.js or bundler unless the user agrees. Use vanilla ES modules, no frameworks, no
-  CDN scripts (the CSP blocks them anyway).
-- Escape every API-provided string with `esc()` before putting it in `innerHTML`.
-- Format numbers with `format.js`. Show base-currency values first and native currency
-  second when they differ.
-- Add a Rust `#[tauri::command]` only for native features. If you do, register it in
-  `generate_handler![...]` and add a permission to `capabilities/` if it uses a plugin.
-- `reqwest` is built without TLS (localhost only). Real broker HTTPS calls belong in Python.
-- The backend must allow CORS for `http://localhost:1420` / `127.0.0.1:1420` for browser
-  mode (`config.py: cors_origins`).
+- Tauri **2.x** only (`tauri = "2"`).
+- No Node.js or bundler. Use vanilla ES modules, no external frameworks, no CDN scripts.
+- Escape every API-provided string with `esc()` before inserting into `innerHTML`.
+- Number formatting rules:
+  - Only monetary / currency values are rounded (to 2 decimal places).
+  - Quantities (positions, crypto shares) preserve exact raw float precision.
+  - Average Price and Mark Price remain in raw trading currency.
+  - Cost Basis, Market Value, and Unrealised P&L convert dynamically via the FX matrix.
+- Add a Rust `#[tauri::command]` only for native features. Generic API communication uses `api_get` and `api_post`.

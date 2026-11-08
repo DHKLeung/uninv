@@ -122,6 +122,26 @@ class FutuService:
         self._universal_accounts_map: dict[str, list[tuple[str, str, int]]] = {}
         self._lock = threading.Lock()
 
+    def set_gateway(self, host: str | None = None, port: int | None = None) -> None:
+        """Update Futu OpenD gateway host/port and clear discovered account mappings."""
+        with self._lock:
+            if host and self.host != host.strip():
+                self.host = host.strip()
+                self._universal_accounts_map.clear()
+            if port and self.port != port:
+                self.port = port
+                self._universal_accounts_map.clear()
+
+    def set_port(self, port: int) -> None:
+        """Update Futu OpenD gateway port and clear discovered account mappings."""
+        self.set_gateway(port=port)
+
+    def test_connection(self) -> tuple[bool, str]:
+        """Test if Futu OpenD daemon is reachable."""
+        if self.is_opend_available():
+            return True, f"Connected to Futu OpenD on {self.host}:{self.port}"
+        return False, f"Cannot reach Futu OpenD on {self.host}:{self.port}"
+
     def is_opend_available(self, timeout: float = 0.3) -> bool:
         """Probe if Futu OpenD TCP port is actively accepting connections."""
         try:
@@ -361,11 +381,13 @@ class FutuService:
             ]
 
             excess_liquidity = max(0.0, total_assets - total_maint_margin)
+            cash_balance = total_assets - total_gross_mv
 
             account_values = AccountValues(
                 currency=Currency.USD,
                 net_liquidation=total_assets,
                 gross_position_value=total_gross_mv,
+                cash_balance=cash_balance,
                 maint_margin_req=total_maint_margin,
                 excess_liquidity=excess_liquidity,
                 unrealized_pnl=total_unrealized_pnl,
@@ -438,14 +460,14 @@ class FutuService:
                 sec_type = SecurityType.CRYPTO
                 strike = None
                 option_type = None
-                last_trade_date = None
+                last_trading_date = None
             elif is_future:
                 instrument = stock_name
                 multiplier = 1.0
                 sec_type = SecurityType.FUTURES
                 strike = None
                 option_type = None
-                last_trade_date = None
+                last_trading_date = None
             elif opt_match:
                 underlying, yy, mm, dd, cp, strike_str = opt_match.groups()
                 month_idx = int(mm) - 1
@@ -454,7 +476,7 @@ class FutuService:
                     int(strike_str) / 1000.0 if len(strike_str) == 8 else float(strike_str) / 1000.0
                 )
                 option_type = OptionType.CALL if cp == "C" else OptionType.PUT
-                last_trade_date = f"20{yy}-{mm}-{dd}"
+                last_trading_date = f"20{yy}-{mm}-{dd}"
                 multiplier = 100.0  # standard equity options multiplier
                 instrument = f"{underlying} {month_abbr}{dd}'{yy} {strike:g} {option_type.value}"
                 sec_type = SecurityType.OPTIONS
@@ -464,7 +486,7 @@ class FutuService:
                 sec_type = SecurityType.STOCKS
                 strike = None
                 option_type = None
-                last_trade_date = None
+                last_trading_date = None
 
             cost_basis = qty * avg_price * multiplier
 
@@ -482,7 +504,7 @@ class FutuService:
                     currency=currency,
                     exchange=exchange,
                     sec_type=sec_type,
-                    last_trade_date=last_trade_date,
+                    last_trading_date=last_trading_date,
                     strike=strike,
                     option_type=option_type,
                 )

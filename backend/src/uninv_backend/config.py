@@ -37,3 +37,18 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def update_broker_gateway(broker_id: str, host: str | None = None, port: int | None = None) -> None:
+    """Dynamically update configured gateway host and/or port for a broker."""
+    settings = get_settings()
+    if broker_id == "ibkr":
+        if host:
+            settings.ibkr_host = host.strip()
+        if port:
+            settings.ibkr_port = port
+    elif broker_id == "futu":
+        if host:
+            settings.futu_host = host.strip()
+        if port:
+            settings.futu_port = port

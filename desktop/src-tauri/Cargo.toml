@@ -1,6 +1,6 @@
 [package]
 name = "uninv-desktop"
-version = "0.1.0"
+version = "1.0.0"
 description = "uninv: unified investing platform (desktop app)"
 authors = ["DHKLeung"]
 edition = "2021"

@@ -34,14 +34,14 @@ brokers:
   - `BrokerAccountSnapshot`: unified financial overview (`AccountValues`), holdings (`Position` list),
     and UTC `asof` timestamp.
   - `AccountValues`: account-wide non-BASE financial ledger streamlined for "current portfolio status"
-    (net liquidation, gross position value, maintenance margin, excess liquidity, unrealized P&L, and
-    multi-currency cash balances with strict zero-filtering). Redundant or order-entry fields (buying power,
-    available funds, initial margin req, single scalar cash balance) are omitted.
-  - `Position`: standardized instrument fields (`instrument`, `symbol`, `avg_price`, `mark_price`,
-    `cost_basis`, `market_value`, `unrealized_pnl`, `multiplier`, `sec_type`, `option_type`, `last_trade_date`).
-    Supports nullable fields for aggregate line items (e.g. unbundled Fund Assets / Bond Assets where
-    underlying holdings cannot be individually retrieved from broker daemons).
+    (net liquidation, gross position value, cash balance, maintenance margin, excess liquidity, unrealized P&L, and
+    multi-currency cash balances with strict zero-filtering).
+  - `Position`: standardized instrument fields (`instrument`, `symbol`, `position`, `avg_price`, `mark_price`,
+    `cost_basis`, `market_value`, `unrealized_pnl`, `multiplier`, `currency`, `exchange`, `sec_type`, `last_trading_date`,
+    `strike`, `option_type`).
   - `FxMatrixResponse`: supported currencies list, UTC `asof` timestamp, and full (11x11) rates matrix.
+  - `BrokerGatewayConfig`: host/IP and port settings per broker gateway.
+  - `BrokerConnectionTestResponse`: result of testing gateway socket and handshake connectivity.
 - **Normalization with `UninvModel`:** Every string is automatically stripped and internal double-spaces
   (e.g., OCC option symbols like `"NVDA  290119C00145000"`) are collapsed to single spaces.
 - **Raw Numerical Precision:** Zero rounding in the backend. All prices, quantities, and cash totals preserve
@@ -56,6 +56,8 @@ and feed discrepancies into standard RESTful endpoints:
 - `GET /api/v1/supporting-brokers`: list of configured brokers (`ibkr`, `futu`).
 - `GET /api/v1/accounts?broker_id={id}`: active accounts for the broker.
 - `GET /api/v1/snapshot?broker_id={id}&account_id={id}`: live account snapshot.
+- `GET /api/v1/broker-connection-test?broker_id={id}`: active connectivity test to broker gateway.
+- `GET` & `POST /api/v1/broker-gateway-config`: read and update gateway Host/IP and Port settings at runtime.
 
 **Broker Account Hierarchy & Meta-Broker Architecture:**
 - **Interactive Brokers (IBKR):** IBKR operates with a single unified account container (`U...`) encompassing all security types, currencies, and products.
@@ -64,7 +66,7 @@ and feed discrepancies into standard RESTful endpoints:
 
 **Zero-Cache Guarantee:** Snapshot endpoints never cache broker data in-memory. Every refresh request
 queries the live broker daemon to capture an authentic, 100% real-time snapshot of account values and holdings.
-External network calls are guarded by strict asynchronous timeouts (e.g., 3–4 seconds) to guarantee the backend
+External network calls are guarded by strict asynchronous timeouts (e.g., 2–3 seconds) to guarantee the backend
 remains responsive even if a broker daemon is busy.
 
 ## 4. Global data pulling & FX matrix architecture
@@ -86,12 +88,12 @@ currency conversion layer:
   together on load/refresh, fixing the dataset in memory. Switching the display currency in the headbar
   recalculates all portfolio metrics instantly client-side with **zero additional network calls**.
 
-## 5. Groups
+## 5. Scope & Zero-Aggregation Holdings Philosophy
 
-Groups are user-defined sets of positions that can span brokers. A position can belong to
-several groups, which is why group weights don't sum to 100%. Groups reference positions by
-`Position.id = "<account_id>:<symbol>"`. They're hardcoded in `portfolio/groups.py` until we
-add local persistence (SQLite) and editing in the UI.
+In `v1.0.0`, `uninv` provides a focused, retail-first portfolio view:
+- **Accounts as the Selector:** Section 1 account tiles serve as the sole selector. Selecting "All Accounts" displays consolidated totals; selecting an individual account tile filters metrics and holdings down to that account.
+- **Zero Aggregation in Holdings:** When "All Accounts" is selected, positions and cash balances from different accounts are kept completely un-aggregated. Because each broker names instruments differently and uses distinct local symbologies (e.g., `NVDA Jan19'29 145 CALL` vs OCC code), forced merging would risk corrupting cost basis or ledger accuracy. Instead, each position row is preserved with its `Broker / Account` tag.
+- **Future Custom Groups:** User-defined groups of positions (spanning brokers) with local SQLite persistence and allocation targets are planned for v1.1.0.
 
 ## 6. Frontend: no build step
 

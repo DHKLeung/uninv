@@ -111,6 +111,10 @@ class AccountValues(UninvModel):
     currency: Currency = Field(description="Account base currency, e.g. Currency.USD")
     net_liquidation: float = Field(description="Net liquidation value / Total assets")
     gross_position_value: float = Field(description="Gross position value")
+    cash_balance: float = Field(
+        default=0.0,
+        description="Total cash balance in base currency (net_liquidation - gross_position_value)",
+    )
     maint_margin_req: float = Field(description="Maintenance margin requirement")
     excess_liquidity: float = Field(
         description="Excess liquidity cushion (net_liquidation - maint_margin_req)"
@@ -130,7 +134,7 @@ class Position(UninvModel):
     """
 
     instrument: str = Field(
-        description="Descriptive instrument name (e.g. 'NVDA Jan19\'29 145 CALL', 'Fund Assets')"
+        description="Descriptive instrument name (e.g. 'NVDA Jan19'29 145 CALL', 'Fund Assets')"
     )
     symbol: str | None = Field(
         default=None, description="Contract local symbol, e.g. 'BOXX', 'NVDA 290119C00145000'"
@@ -151,11 +155,41 @@ class Position(UninvModel):
     currency: Currency = Field(description="Trading currency")
     exchange: Exchange | None = Field(default=None, description="Primary exchange")
     sec_type: SecurityType = Field(description="Standardized security type")
-    last_trade_date: str | None = Field(
+    last_trading_date: str | None = Field(
         default=None, description="Last trading date / expiration in YYYY-MM-DD format"
     )
     strike: float | None = Field(default=None, description="Option/future option strike price")
     option_type: OptionType | None = Field(default=None, description="Option type (CALL or PUT)")
+
+
+class BrokerConnectionTestResponse(UninvModel):
+    """Result of testing connection to a broker gateway."""
+
+    broker_id: str = Field(description="Broker identifier, e.g. 'ibkr' or 'futu'")
+    connected: bool = Field(description="Whether the broker gateway is reachable")
+    message: str = Field(description="Status description or error message")
+
+
+class BrokerGatewayConfig(UninvModel):
+    """Configuration for a broker gateway."""
+
+    host: str = Field(default="127.0.0.1", description="Gateway host or IP address")
+    port: int = Field(description="Gateway TCP port", ge=1, le=65535)
+
+
+class BrokerGatewayConfigRequest(UninvModel):
+    """Request to update broker gateway configuration."""
+
+    broker_id: str = Field(description="Broker identifier, e.g. 'ibkr' or 'futu'")
+    host: str | None = Field(default=None, description="Gateway host or IP address")
+    port: int | None = Field(default=None, description="Gateway TCP port", ge=1, le=65535)
+
+
+class BrokerGatewayConfigResponse(UninvModel):
+    """Current configured gateways for all brokers."""
+
+    status: str = Field(default="ok")
+    gateways: dict[str, BrokerGatewayConfig] = Field(description="Configured gateways by broker ID")
 
 
 class BrokerAccountSnapshot(UninvModel):

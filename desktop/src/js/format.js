@@ -49,10 +49,8 @@ export function convertAmount(amount, fromCurrency, toCurrency, fxMatrix = null)
   }
   const from = (fromCurrency || "USD").toUpperCase();
   const to = (toCurrency || "USD").toUpperCase();
-  if (from === to) {
-    return amount;
-  }
-  // 1. Direct matrix lookup: fxMatrix[from][to]
+
+  // 1. Direct matrix lookup: always multiply rate (matrix[from][to] is 1.0 for same-to-same)
   if (
     fxMatrix &&
     fxMatrix[from] &&
@@ -141,13 +139,16 @@ export function formatPct(fraction, { signed = true, digits = 2 } = {}) {
 }
 
 /**
- * Format quantity.
+ * Format quantity preserving exact full precision for fractional shares without display rounding.
  */
 export function formatQty(value) {
   if (value === null || value === undefined || Number.isNaN(value)) {
     return '<span class="muted">—</span>';
   }
-  return value.toLocaleString("en-GB", { maximumFractionDigits: 4 });
+  if (Number.isInteger(value)) {
+    return value.toLocaleString("en-GB");
+  }
+  return value.toLocaleString("en-GB", { maximumFractionDigits: 20 });
 }
 
 /**

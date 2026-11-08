@@ -81,8 +81,8 @@ After installing and logging into IB Gateway:
 
 1. **Start IB Gateway** (or TWS) on your machine and log in with your credentials and passkey.
 2. Launch `uninv`:
-   - Windows: Run `.\scripts\dev.ps1` (or double-click `dev.cmd`).
-   - macOS / Linux: Run `./scripts/dev.sh`.
+   - Windows: Run `.\scripts\start-all.ps1` (or double-click `scripts\start-all.cmd`).
+   - macOS / Linux: Run `./scripts/start-all.sh`.
 3. The Python backend automatically detects the active socket and streams live positions and account balances into your dashboard.
 
 ---

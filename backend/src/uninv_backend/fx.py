@@ -95,7 +95,6 @@ class FxRouter:
         asof: datetime | None = None,
     ) -> FxMatrixResponse:
         """Construct the complete (N x N) currency conversion matrix without caching."""
-        query_asof = asof or datetime.now(UTC)
         currencies = list(Currency)
 
         quotes_res = batch_probe_fn(ALL_IDEALPRO_PAIRS)
@@ -106,6 +105,7 @@ class FxRouter:
                 logger.debug("FX batch quote probe error: %s", e)
                 quotes_res = {}
 
+        query_asof = asof or datetime.now(UTC)
         quotes: dict[str, float] = quotes_res or {}
         return self._synthesize_matrix(quotes, query_asof, currencies)
 

@@ -106,7 +106,7 @@ def test_snapshot_endpoint(client: TestClient) -> None:
             currency=Currency.USD,
             exchange=Exchange.BATS,
             sec_type=SecurityType.STOCKS,
-            last_trade_date=None,
+            last_trading_date=None,
             strike=None,
             option_type=None,
         ),
@@ -123,7 +123,7 @@ def test_snapshot_endpoint(client: TestClient) -> None:
             currency=Currency.USD,
             exchange=Exchange.AMEX,
             sec_type=SecurityType.OPTIONS,
-            last_trade_date="2029-01-19",
+            last_trading_date="2029-01-19",
             strike=145.0,
             option_type=OptionType.CALL,
         ),
@@ -173,7 +173,7 @@ def test_snapshot_endpoint(client: TestClient) -> None:
         assert boxx["unrealized_pnl"] == 1558.13
         assert boxx["exchange"] == "BATS"
         assert boxx["sec_type"] == "STOCKS"
-        assert boxx["last_trade_date"] is None
+        assert boxx["last_trading_date"] is None
         assert boxx["option_type"] is None
 
         nvda = positions[1]
@@ -182,7 +182,7 @@ def test_snapshot_endpoint(client: TestClient) -> None:
         assert nvda["strike"] == 145.0
         assert nvda["option_type"] == "CALL"
         assert nvda["sec_type"] == "OPTIONS"
-        assert nvda["last_trade_date"] == "2029-01-19"
+        assert nvda["last_trading_date"] == "2029-01-19"
         assert nvda["cost_basis"] == 7081.85
         assert nvda["market_value"] == 7497.76
 
@@ -630,5 +630,71 @@ def test_futu_service_parse_positions() -> None:
     assert p1.sec_type == SecurityType.OPTIONS
     assert p1.option_type == OptionType.CALL
     assert p1.strike == 145.0
-    assert p1.last_trade_date == "2025-01-17"
+    assert p1.last_trading_date == "2025-01-17"
     assert p1.multiplier == 100.0
+
+
+def test_broker_connection_test(client: TestClient) -> None:
+    with patch(
+        "uninv_backend.api.routes.ibkr_service.test_connection",
+        new_callable=AsyncMock,
+        return_value=(True, "Connected to IBKR on 127.0.0.1:7496"),
+    ):
+        resp = client.get("/api/v1/broker-connection-test?broker_id=ibkr")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["broker_id"] == "ibkr"
+        assert data["connected"] is True
+        assert "Connected to IBKR" in data["message"]
+
+    with patch(
+        "uninv_backend.api.routes.futu_service.test_connection",
+        return_value=(False, "Cannot reach Futu OpenD on 127.0.0.1:11111"),
+    ):
+        resp = client.get("/api/v1/broker-connection-test?broker_id=futu")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["broker_id"] == "futu"
+        assert data["connected"] is False
+        assert "Cannot reach Futu OpenD" in data["message"]
+
+    # Unsupported broker
+    resp = client.get("/api/v1/broker-connection-test?broker_id=unknown")
+    assert resp.status_code == 404
+
+
+def test_broker_gateway_config_endpoints(client: TestClient) -> None:
+    # 1. GET current gateways config
+    resp = client.get("/api/v1/broker-gateway-config")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert "ibkr" in data["gateways"]
+    assert data["gateways"]["ibkr"]["host"] == "127.0.0.1"
+    assert data["gateways"]["ibkr"]["port"] == 7496
+    assert "futu" in data["gateways"]
+    assert data["gateways"]["futu"]["host"] == "127.0.0.1"
+    assert data["gateways"]["futu"]["port"] == 11111
+
+    # 2. POST update ibkr host and port
+    resp = client.post(
+        "/api/v1/broker-gateway-config",
+        json={"broker_id": "ibkr", "host": "192.168.1.50", "port": 4001},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["gateways"]["ibkr"]["host"] == "192.168.1.50"
+    assert data["gateways"]["ibkr"]["port"] == 4001
+
+    # 3. POST with unknown broker ID returns 404
+    resp = client.post(
+        "/api/v1/broker-gateway-config",
+        json={"broker_id": "unknown_broker", "host": "127.0.0.1", "port": 1234},
+    )
+    assert resp.status_code == 404
+
+    # Restore default
+    client.post(
+        "/api/v1/broker-gateway-config",
+        json={"broker_id": "ibkr", "host": "127.0.0.1", "port": 7496},
+    )

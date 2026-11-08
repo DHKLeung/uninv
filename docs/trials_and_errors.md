@@ -114,7 +114,7 @@ When the Client Portal Gateway failed, we briefly considered narrowing the scope
 ### Decision
 **Preserve Cross-Platform Support (Windows, macOS, Linux):**
 - Maintain CI workflows on `windows-latest`, `macos-latest`, and `ubuntu-latest`.
-- Maintain development runners: `dev.ps1` / `dev.cmd` (Windows) and `dev.sh` (macOS/Linux).
+- Maintain development runners: `start-all.ps1` / `start-all.cmd` (Windows) and `start-all.sh` (macOS/Linux).
 - Document OS-specific gateway setup instructions under `gateways/`.
 
 ---

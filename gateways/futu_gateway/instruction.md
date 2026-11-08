@@ -76,8 +76,10 @@ If it returns an active listener on `127.0.0.1:11111`, OpenD is ready!
 ## 4. How `uninv` Connects
 
 * **API Endpoints:**
-  * `GET /api/v1/supporting-brokers`: Returns `[{"id": "ibkr", ...}, {"id": "futu", "name": "Futubull"}]`.
+  * `GET /api/v1/supporting-brokers`: Returns `[{"id": "ibkr", "name": "Interactive Brokers"}, {"id": "futu", "name": "Futu"}]`.
   * `GET /api/v1/accounts?broker_id=futu`: Queries OpenD and returns your managed account IDs.
   * `GET /api/v1/snapshot?broker_id=futu&account_id={id}`: Pulls live account margins, cash balances, and positions.
+  * `GET /api/v1/broker-connection-test?broker_id=futu`: Tests if Futu OpenD is reachable on the configured host/port.
+  * `GET` / `POST /api/v1/broker-gateway-config`: Reads or updates the configured host/port for Futu OpenD.
 * **Fast Offline Detection:** `uninv` automatically probes port 11111 with a fast 0.2s socket check before making requests. If OpenD is offline, the backend returns an immediate HTTP 503 error with troubleshooting instructions, rather than hanging.
 * **Non-Blocking Architecture:** `futu-api`'s synchronous SDK calls are executed inside FastAPI's worker threadpool via `anyio.to_thread.run_sync()`, leaving Uvicorn's main `asyncio` event loop completely unblocked.

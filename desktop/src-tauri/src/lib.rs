@@ -81,6 +81,46 @@ async fn api_get(path: String, backend: tauri::State<'_, Backend>) -> Result<Val
     serde_json::from_str(&body).map_err(|e| format!("Invalid JSON from backend: {e}"))
 }
 
+/// POST a JSON payload to a Python backend endpoint and return parsed JSON.
+/// Similar to Python's requests.post(url, json=body).
+#[tauri::command]
+async fn api_post(
+    path: String,
+    body: Value,
+    backend: tauri::State<'_, Backend>,
+) -> Result<Value, String> {
+    let allowed = path.starts_with("/api/") && !path.contains("..");
+    if !allowed {
+        return Err(format!("Path not allowed: {path}"));
+    }
+
+    let base_url = backend
+        .base_url
+        .read()
+        .map_err(|e| e.to_string())?
+        .clone();
+    let url = format!("{}{}", base_url, path);
+    let response = backend
+        .client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| {
+            format!(
+                "Cannot reach the uninv backend at {}. Is it running? ({e})",
+                base_url
+            )
+        })?;
+
+    let status = response.status();
+    let res_body = response.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format!("Backend returned {status}: {res_body}"));
+    }
+    serde_json::from_str(&res_body).map_err(|e| format!("Invalid JSON from backend: {e}"))
+}
+
 /// The backend URL in use, so the UI can show it in its status bar.
 #[tauri::command]
 fn backend_url(backend: tauri::State<'_, Backend>) -> Result<String, String> {
@@ -111,6 +151,7 @@ pub fn run() {
         // Register every command the UI may call here.
         .invoke_handler(tauri::generate_handler![
             api_get,
+            api_post,
             backend_url,
             set_backend_url
         ])

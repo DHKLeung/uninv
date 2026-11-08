@@ -6,11 +6,16 @@ from typing import Annotated
 import anyio
 from fastapi import APIRouter, HTTPException, Query
 
+from uninv_backend.config import update_broker_gateway
 from uninv_backend.futu import futu_service
 from uninv_backend.ibkr import ibkr_service
 from uninv_backend.models import (
     AccountsResponse,
     BrokerAccountSnapshot,
+    BrokerConnectionTestResponse,
+    BrokerGatewayConfig,
+    BrokerGatewayConfigRequest,
+    BrokerGatewayConfigResponse,
     FxMatrixResponse,
     SupportingBroker,
 )
@@ -132,3 +137,74 @@ async def get_fx() -> FxMatrixResponse:
     except Exception as e:
         logger.exception("Error constructing FX matrix")
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get(
+    "/broker-connection-test",
+    response_model=BrokerConnectionTestResponse,
+    summary="Test connectivity to a broker gateway daemon",
+)
+async def test_broker_connection(
+    broker_id: Annotated[
+        str,
+        Query(
+            description="Broker identifier, e.g. 'ibkr' or 'futu'",
+            examples=["ibkr", "futu"],
+        ),
+    ],
+) -> BrokerConnectionTestResponse:
+    """Test if broker gateway daemon is actively reachable."""
+    if broker_id == "ibkr":
+        connected, message = await ibkr_service.test_connection()
+        return BrokerConnectionTestResponse(
+            broker_id=broker_id, connected=connected, message=message
+        )
+    elif broker_id == "futu":
+        connected, message = await anyio.to_thread.run_sync(futu_service.test_connection)
+        return BrokerConnectionTestResponse(
+            broker_id=broker_id, connected=connected, message=message
+        )
+    else:
+        raise HTTPException(status_code=404, detail=f"Broker '{broker_id}' not supported")
+
+
+@router.get(
+    "/broker-gateway-config",
+    response_model=BrokerGatewayConfigResponse,
+    summary="Get current configured host and ports for broker gateways",
+)
+def get_broker_gateway_config() -> BrokerGatewayConfigResponse:
+    """Return currently configured host and TCP ports for all supported broker gateways."""
+    gateways = {
+        "ibkr": BrokerGatewayConfig(host=ibkr_service.host, port=ibkr_service.port),
+        "futu": BrokerGatewayConfig(host=futu_service.host, port=futu_service.port),
+    }
+    return BrokerGatewayConfigResponse(
+        status="ok",
+        gateways=gateways,
+    )
+
+
+@router.post(
+    "/broker-gateway-config",
+    response_model=BrokerGatewayConfigResponse,
+    summary="Update broker gateway host and port configuration",
+)
+def update_broker_gateway_config(
+    payload: BrokerGatewayConfigRequest,
+) -> BrokerGatewayConfigResponse:
+    """Update gateway host and/or port for a broker and re-initialize connection pool."""
+    broker_id = payload.broker_id.lower().strip()
+    host = payload.host
+    port = payload.port
+
+    if broker_id == "ibkr":
+        ibkr_service.set_gateway(host=host, port=port)
+        update_broker_gateway("ibkr", host=host, port=port)
+    elif broker_id == "futu":
+        futu_service.set_gateway(host=host, port=port)
+        update_broker_gateway("futu", host=host, port=port)
+    else:
+        raise HTTPException(status_code=404, detail=f"Broker '{broker_id}' not supported")
+
+    return get_broker_gateway_config()

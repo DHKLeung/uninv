@@ -45,3 +45,25 @@ export async function apiGet(path) {
   }
   return res.json();
 }
+
+/** POST JSON to a backend path and return parsed JSON. */
+export async function apiPost(path, body) {
+  if (inTauri) {
+    return tauri.core.invoke("api_post", { path, body });
+  }
+  const base = await backendUrl();
+  let res;
+  try {
+    res = await fetch(base + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    throw new Error(`Cannot reach the uninv backend at ${base}. (${err.message || err})`);
+  }
+  if (!res.ok) {
+    throw new Error(`Backend returned ${res.status}: ${await res.text()}`);
+  }
+  return res.json();
+}

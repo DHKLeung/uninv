@@ -175,3 +175,43 @@ _Last updated: 2026-11-08_
     - Account horizontal tiles display clean formatted IDs (e.g. `...0281`, `...7283`, `...3055`).
     - In "All Accounts", positions are displayed additively without forced symbol merging; cash balances are summed across all non-zero currency holdings.
   - 29/29 tests pass, Ruff check passes, Tauri `cargo check` passes, live verified with screenshot.
+
+- ✅ v1.0.0 GUI Rework, Unified Branding, Gateway Port Management & Backend Alignment:
+  - Version bumped to `1.0.0` across backend (`pyproject.toml`, `__init__.py`) and desktop (`tauri.conf.json`, `Cargo.toml`).
+  - App Icon consistency: unified smooth purple square with "uninv" in center generated across Tauri window icons (`icon.png`, `128x128.png`, `32x32.png`, `icon.ico`), in-app headbar brand, and About page.
+  - Headbar & As-of Enhancements:
+    - Replaced "Refresh" text button with sleek circular arrow icon button with spinning loading animation.
+    - As-of timestamp displays the exact finishing time when all endpoint queries complete.
+    - Interactive tooltip next to As-of time displays individual timestamp info for each called endpoint (`/api/v1/fx`, `/api/v1/accounts`, `/api/v1/snapshot`).
+    - Backend endpoints (`/api/v1/snapshot`, `/api/v1/accounts`, `/api/v1/fx`) updated to capture `asof` strictly *after* all network fetches and probes finish.
+  - Cleaned Navigation:
+    - Removed Option Strategies and DCA Planning to focus app strictly on unified retail portfolio view.
+    - Active pages: `Portfolio`, `Settings`, `About`.
+  - Portfolio Page Refinements:
+    - Section 1 Accounts: All Accounts tile shows total accounts and positions count (e.g. `6 accounts · 18 positions`) with converted sum of NLV.
+    - Section 2 Account Values:
+      - Title: "Account Values", scope subtitle displays `All Accounts Consolidated` or `<account_id> · <broker_name>` without currency badge.
+      - 6 structured items in 2 rows:
+        - Row 1: `Net Liquidation Value`, `Gross Position Value`, `Cash Balance` (`Cash Balance + Gross Position Value == Net Liquidation Value`).
+        - Row 2: `Unrealised P&L` (with % badge), `Maintenance Margin`, `Excess Liquidity`.
+      - When All Accounts is selected, `Maintenance Margin` and `Excess Liquidity` display `—` (dash); other totals sum across all accounts.
+    - Section 3 Holdings:
+      - Positions table (12 columns from left to right): `Broker / Account`, `Instrument / Symbol`, `Type / Exchange`, `Position`, `Avg Price`, `Mark Price`, `Cost Basis`, `Market Value`, `Last Trading Date`, `Unrealised P&L`, `Weight`, `Currency`.
+      - Positions and Cash Balances are kept un-aggregated in All Accounts view (each broker account row preserved individually).
+      - Cash Balances table: `Broker / Account`, `Currency`, `Amount (RAW)`, `AMOUNT (CONVERTED)`.
+      - `last_trading_date` field standardized across backend models and frontend.
+  - FX and Currency Display Consistency:
+    - Currency selector formatted as `<Code> (<Symbol>)`, e.g. `USD ($)`, `EUR (€)`, `GBP (£)`.
+    - Main values always prefixed with currency symbol.
+    - Always uniform FX multiplication without conditional branch.
+    - Average Price, Mark Price, and RAW cash balance remain in raw native currency.
+  - Broker Gateway Configuration & Connectivity:
+    - Added `GET /api/v1/broker-connection-test` to test connectivity to broker gateways.
+    - Added `GET` and `POST /api/v1/broker-gateway-config` to read and dynamically update gateway Host/IP and TCP ports (superseding old redundant port-only endpoints).
+    - Rust proxy added generic `api_post` mirror to `api_get`.
+    - Settings page provides Edit/Save buttons, broker enable/disable checkboxes, Host/IP and Port inputs, and live `✓ Connected` status badges.
+  - About Page: completely reworked, presenting purple square icon, `uninv`, `Unified Investing`, description, Version: `1.0.0`, and Author: `DHKLeung`.
+  - Repo-Wide Cleanup & Documentation:
+    - Removed redundant endpoints (`/api/v1/broker-gateway-port`) and models.
+    - Updated all project markdown documentation (`README.md`, `backend/README.md`, `backend/AGENTS.md`, `desktop/AGENTS.md`, `docs/architecture.md`, `docs/trials_and_errors.md`, `gateways/ib_gateway/instruction.md`, `gateways/futu_gateway/instruction.md`).
+    - 31/31 unit tests pass, Ruff check passes, Tauri `cargo check` passes.

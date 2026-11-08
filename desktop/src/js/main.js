@@ -4,16 +4,16 @@
  * Global Data Pulling:
  * All broker accounts, unified snapshots, and the complete FX matrix (/api/v1/fx)
  * are fetched globally on app load or when clicking Refresh.
- * The data is fixed in memory; currency switching is an instantaneous GUI calculation
+ * Data is fixed in memory; currency switching is an instantaneous GUI calculation
  * using the pre-pulled FX matrix without making any additional network requests.
  *
  * Unidirectional Portfolio Interaction:
  * In the Portfolio page, Section 1 (Accounts horizontal tiles) is the sole selector.
  * Selecting an account triggers a single unidirectional reaction path:
- * Section 1 Tiles -> Section 2 Metrics Board -> Section 3 Positions & Cash Balances.
+ * Section 1 Tiles -> Section 2 Account Values Board -> Section 3 Positions & Cash Balances.
  */
 
-import { apiGet, backendUrl } from "./api.js";
+import { apiGet, apiPost, backendUrl } from "./api.js";
 import {
   CURRENCY_SYMBOLS,
   convertAmount,
@@ -35,14 +35,66 @@ const state = {
   currencies: [],
   snapshots: [], // list of BrokerAccountSnapshot objects
   fxMatrix: null, // nested map: rates[from][to] = rate
-  asof: null,
+  finishTime: null, // UTC timestamp when all fetches completed
+  endpointTimestamps: [], // [{ label: "FX Matrix (/api/v1/fx)", asof: "..." }]
 
   // Display / Interaction State
   selectedAccount: "", // empty for "All", or account_id string
   currency: "USD",
   search: "",
   sort: { key: "market_value", dir: -1 },
+
+  // Settings State
+  settings: {
+    isEditing: false,
+    brokerGateways: {
+      ibkr: { host: "127.0.0.1", port: 7496 },
+      futu: { host: "127.0.0.1", port: 11111 },
+    },
+    enabledBrokers: { ibkr: true, futu: true },
+    connectionStatus: {}, // { ibkr: { connected: true, message: "..." } }
+  },
 };
+
+// ---------------------------------------------------------------------------------------
+// Helper Utilities
+// ---------------------------------------------------------------------------------------
+
+function getStoredEnabledBrokers() {
+  try {
+    const raw = localStorage.getItem("uninv_enabled_brokers");
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.warn("Failed to read uninv_enabled_brokers from localStorage", e);
+  }
+  return { ibkr: true, futu: true };
+}
+
+function saveStoredEnabledBrokers(enabledMap) {
+  try {
+    localStorage.setItem("uninv_enabled_brokers", JSON.stringify(enabledMap));
+  } catch (e) {
+    console.warn("Failed to save uninv_enabled_brokers to localStorage", e);
+  }
+}
+
+function formatUtcTimestamp(isoStr) {
+  if (!isoStr) return "–";
+  const dt = new Date(isoStr);
+  if (Number.isNaN(dt.getTime())) return isoStr;
+  return dt.toLocaleString("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "medium",
+    timeZone: "UTC",
+  }) + " UTC";
+}
+
+function formatAccountDisplay(brokerId, accountId) {
+  if (brokerId === "futu" && accountId && accountId.length > 6) {
+    return `...${accountId.slice(-4)}`;
+  }
+  return accountId || "–";
+}
 
 // ---------------------------------------------------------------------------------------
 // Global Data Loading (Fixed In-Memory Snapshot & FX Matrix)
@@ -66,66 +118,123 @@ function syncCurrencyDropdown(currencies) {
 
 /**
  * Global data refresh: pulls all broker data, account snapshots, and the full FX matrix.
- * All operations and page displays throughout the app consume this fixed in-memory data.
+ * Records finish timestamp as the authoritative 'As of' time.
  */
 async function load() {
   const btn = $("#refresh-btn");
   btn.disabled = true;
-  btn.textContent = "Loading…";
+  btn.classList.add("loading");
+
+  const endpointTimestamps = [];
 
   try {
-    // 1. Fetch brokers and full FX matrix concurrently
-    const [brokers, fxData] = await Promise.all([
+    // 1. Fetch brokers, FX matrix, and gateway configuration concurrently
+    const [brokers, fxData, gatewayData] = await Promise.all([
       apiGet("/api/v1/supporting-brokers"),
       apiGet("/api/v1/fx"),
+      apiGet("/api/v1/broker-gateway-config").catch(() => ({ gateways: {} })),
     ]);
 
     state.brokers = brokers;
     state.currencies = fxData.currencies || [];
     state.fxMatrix = fxData.rates || {};
-    if (fxData.asof) {
-      state.asof = fxData.asof;
+
+    if (gatewayData?.gateways) {
+      state.settings.brokerGateways = {
+        ...state.settings.brokerGateways,
+        ...gatewayData.gateways,
+      };
     }
 
-    // Sync currency dropdown with supported currencies from matrix
+    if (fxData.asof) {
+      endpointTimestamps.push({
+        label: "FX Matrix (/api/v1/fx)",
+        asof: fxData.asof,
+      });
+    }
+
     syncCurrencyDropdown(state.currencies);
 
-    // 2. Fetch accounts for each broker
-    const brokerMap = Object.fromEntries(brokers.map((b) => [b.id, b.name]));
-    const accountPromises = brokers.map((b) =>
-      apiGet(`/api/v1/accounts?broker_id=${encodeURIComponent(b.id)}`)
-    );
-    const accountResponses = await Promise.all(accountPromises);
+    // Filter brokers by user enabled preference
+    const enabledBrokers = getStoredEnabledBrokers();
+    state.settings.enabledBrokers = enabledBrokers;
+    const activeBrokers = brokers.filter((b) => enabledBrokers[b.id] !== false);
 
-    // 3. Fetch snapshots for all managed accounts
+    const brokerMap = Object.fromEntries(brokers.map((b) => [b.id, b.name]));
+
+    // 2. Fetch accounts for each active broker
+    const accountResponses = await Promise.all(
+      activeBrokers.map(async (b) => {
+        try {
+          const resp = await apiGet(`/api/v1/accounts?broker_id=${encodeURIComponent(b.id)}`);
+          if (resp.asof) {
+            endpointTimestamps.push({
+              label: `${brokerMap[b.id] || b.id} Accounts (/api/v1/accounts)`,
+              asof: resp.asof,
+            });
+          }
+          return resp;
+        } catch (err) {
+          console.warn(`Failed to fetch accounts for ${b.id}:`, err);
+          return { broker_id: b.id, accounts: [], asof: null };
+        }
+      })
+    );
+
+    // 3. Fetch snapshots for all discovered accounts
     const snapshotPromises = [];
     for (const resp of accountResponses) {
-      if (resp.asof) {
-        state.asof = resp.asof;
-      }
       for (const acctId of resp.accounts) {
         snapshotPromises.push(
           apiGet(
             `/api/v1/snapshot?broker_id=${encodeURIComponent(resp.broker_id)}&account_id=${encodeURIComponent(acctId)}`
-          ).then((snap) => ({
-            ...snap,
-            broker_name: brokerMap[snap.broker_id] ?? snap.broker_id,
-          }))
+          )
+            .then((snap) => {
+              if (snap.asof) {
+                const acctFmt = formatAccountDisplay(snap.broker_id, snap.account_id);
+                endpointTimestamps.push({
+                  label: `${brokerMap[snap.broker_id] || snap.broker_id} (${acctFmt}) Snapshot`,
+                  asof: snap.asof,
+                });
+              }
+              return {
+                ...snap,
+                broker_name: brokerMap[snap.broker_id] ?? snap.broker_id,
+              };
+            })
+            .catch((err) => {
+              console.warn(`Failed to fetch snapshot for ${resp.broker_id}:${acctId}:`, err);
+              return null;
+            })
         );
       }
     }
 
-    state.snapshots = await Promise.all(snapshotPromises);
+    const rawSnapshots = await Promise.all(snapshotPromises);
+    state.snapshots = rawSnapshots.filter(Boolean);
+
+    // 4. Record the finishing timestamp of all network operations
+    state.finishTime = new Date().toISOString();
+    state.endpointTimestamps = endpointTimestamps;
 
     setBackendStatus(true);
     hideError();
     render();
+
+    // If Settings page is currently active, render settings
+    if (state.activePage === "settings") {
+      renderSettings();
+    }
+    // Background probe connection statuses so settings is immediately warm
+    testBrokerConnections().then(() => {
+      if (state.activePage === "settings") renderSettings();
+    });
   } catch (err) {
     setBackendStatus(false);
     showError(String(err?.message ?? err));
   } finally {
     btn.disabled = false;
-    btn.textContent = "Refresh";
+    btn.classList.remove("loading");
   }
 }
 
@@ -138,12 +247,15 @@ async function setBackendStatus(ok) {
 
 function showError(message) {
   const el = $("#error-banner");
-  el.textContent = message;
-  el.hidden = false;
+  if (el) {
+    el.textContent = message;
+    el.hidden = false;
+  }
 }
 
 function hideError() {
-  $("#error-banner").hidden = true;
+  const el = $("#error-banner");
+  if (el) el.hidden = true;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -153,20 +265,37 @@ function hideError() {
 function render() {
   renderHeader();
   renderAccounts();
-  renderMetrics();
+  renderAccountValues();
   renderPositions();
   renderCashBalances();
 }
 
 function renderHeader() {
-  if (state.asof) {
-    const dt = new Date(state.asof);
-    const formattedDate = dt.toLocaleString("en-GB", {
-      dateStyle: "medium",
-      timeStyle: "medium",
-    });
-    $("#as-of").textContent = `As of ${formattedDate} UTC`;
+  // Main "As of" shows the exact finish time of all queries
+  if (state.finishTime) {
+    $("#as-of").textContent = `As of ${formatUtcTimestamp(state.finishTime)}`;
+  } else {
+    $("#as-of").textContent = "";
   }
+
+  // Populate Tooltip with each endpoint's respective asof timestamp
+  const tooltipList = $("#as-of-tooltip-list");
+  if (tooltipList) {
+    if (state.endpointTimestamps.length > 0) {
+      tooltipList.innerHTML = state.endpointTimestamps
+        .map(
+          (item) => `
+          <div class="tooltip-item">
+            <span class="tooltip-item-label">${esc(item.label)}</span>
+            <span class="tooltip-item-time font-mono">${esc(formatUtcTimestamp(item.asof))}</span>
+          </div>`
+        )
+        .join("");
+    } else {
+      tooltipList.innerHTML = `<div class="tooltip-empty">No endpoint timestamps recorded</div>`;
+    }
+  }
+
   $("#currency-select").value = state.currency;
 }
 
@@ -190,7 +319,7 @@ function getAllFilteredPositions() {
 }
 
 // ---------------------------------------------------------------------------------------
-// Section 1: Accounts Horizontal Tiles (Authoritative Selector)
+// Section 1: Accounts Horizontal Tiles (Sole Selector)
 // ---------------------------------------------------------------------------------------
 
 function updateAccountTilesActiveState() {
@@ -202,10 +331,6 @@ function updateAccountTilesActiveState() {
   }
 }
 
-/**
- * Unidirectional reaction path:
- * Selecting an account updates Section 1 tile highlight, then updates Section 2, then Section 3.
- */
 function onSelectAccount(acctId) {
   if (state.selectedAccount === acctId && acctId !== "") {
     state.selectedAccount = "";
@@ -213,11 +338,8 @@ function onSelectAccount(acctId) {
     state.selectedAccount = acctId;
   }
 
-  // 1. Update Section 1 tiles active state
   updateAccountTilesActiveState();
-  // 2. Reactively update Section 2 Metrics Board
-  renderMetrics();
-  // 3. Reactively update Section 3 Holdings
+  renderAccountValues();
   renderPositions();
   renderCashBalances();
 }
@@ -228,9 +350,14 @@ function renderAccounts() {
   if (!listEl) return;
 
   const totalAccounts = state.snapshots.length;
+  const totalPositionsCount = state.snapshots.reduce(
+    (acc, s) => acc + (s.positions?.length ?? 0),
+    0
+  );
+
   $("#accounts-caption").textContent = `${totalAccounts} accounts · ${state.brokers.length} broker(s)`;
 
-  // Tile 1: "All Accounts"
+  // Tile 1: "All Accounts" (Sum of NLV across all accounts with FX conversion)
   const allNetLiqConverted = state.snapshots.reduce(
     (acc, s) =>
       acc +
@@ -252,7 +379,9 @@ function renderAccounts() {
       </div>
       <div class="account-tile-body">
         <span class="account-tile-val font-mono">${formatMoney(allNetLiqConverted, ccy)}</span>
-        <span class="account-tile-caption">${totalAccounts} accounts total</span>
+        <span class="account-tile-caption">${totalAccounts} accounts · ${totalPositionsCount} ${
+          totalPositionsCount === 1 ? "position" : "positions"
+        }</span>
       </div>
     </div>
   `;
@@ -263,10 +392,7 @@ function renderAccounts() {
     const av = s.account_values;
     const acctNetLiq = convertAmount(av?.net_liquidation ?? 0, av?.currency, ccy, state.fxMatrix);
     const posCount = s.positions?.length ?? 0;
-    const displayName =
-      s.broker_id === "futu" && s.account_id.length > 6
-        ? `...${s.account_id.slice(-4)}`
-        : s.account_id;
+    const displayName = formatAccountDisplay(s.broker_id, s.account_id);
 
     html += `
       <div class="account-tile ${isActive ? "active" : ""}" data-account="${esc(s.account_id)}">
@@ -292,28 +418,22 @@ function renderAccounts() {
 }
 
 // ---------------------------------------------------------------------------------------
-// Section 2: Metrics Board (Reflects Section 1 Selection)
+// Section 2: Account Values (Reflects Section 1 Selection)
 // ---------------------------------------------------------------------------------------
 
-function renderMetrics() {
+function renderAccountValues() {
   const ccy = state.currency;
   const filteredSnaps = getFilteredSnapshots();
 
-  // Header Scope Description
+  // Header Subtitle / Scope Label
   if (state.selectedAccount === "") {
-    $("#metrics-scope-label").textContent = "ALL ACCOUNTS CONSOLIDATED";
-    $("#metrics-scope-desc").textContent = `Aggregated across all ${state.snapshots.length} connected accounts`;
+    $("#metrics-scope-label").textContent = "All Accounts Consolidated";
   } else {
     const snap = state.snapshots.find((s) => s.account_id === state.selectedAccount);
     const brokerName = snap?.broker_name || "Broker";
-    const displayId =
-      snap?.broker_id === "futu" && snap?.account_id.length > 6
-        ? `...${snap.account_id.slice(-4)}`
-        : state.selectedAccount;
-    $("#metrics-scope-label").textContent = `ACCOUNT: ${displayId}`;
-    $("#metrics-scope-desc").textContent = `${brokerName} account-level margin & balances`;
+    const displayId = formatAccountDisplay(snap?.broker_id, state.selectedAccount);
+    $("#metrics-scope-label").textContent = `${displayId} · ${brokerName}`;
   }
-  $("#metrics-currency-name").textContent = ccy;
 
   // Aggregate values using pre-pulled FX matrix
   const netLiq = filteredSnaps.reduce(
@@ -321,18 +441,6 @@ function renderMetrics() {
       acc +
       convertAmount(
         s.account_values?.net_liquidation ?? 0,
-        s.account_values?.currency,
-        ccy,
-        state.fxMatrix
-      ),
-    0
-  );
-
-  const unrealizedPnl = filteredSnaps.reduce(
-    (acc, s) =>
-      acc +
-      convertAmount(
-        s.account_values?.unrealized_pnl ?? 0,
         s.account_values?.currency,
         ccy,
         state.fxMatrix
@@ -352,23 +460,14 @@ function renderMetrics() {
     0
   );
 
-  const excessLiq = filteredSnaps.reduce(
-    (acc, s) =>
-      acc +
-      convertAmount(
-        s.account_values?.excess_liquidity ?? 0,
-        s.account_values?.currency,
-        ccy,
-        state.fxMatrix
-      ),
-    0
-  );
+  // Cash Balance: Net Liquidation Value - Gross Position Value
+  const cashBalance = netLiq - grossPositionVal;
 
-  const maintMargin = filteredSnaps.reduce(
+  const unrealizedPnl = filteredSnaps.reduce(
     (acc, s) =>
       acc +
       convertAmount(
-        s.account_values?.maint_margin_req ?? 0,
+        s.account_values?.unrealized_pnl ?? 0,
         s.account_values?.currency,
         ccy,
         state.fxMatrix
@@ -390,21 +489,38 @@ function renderMetrics() {
       ? unrealizedPnl / Math.abs(grossPositionVal)
       : 0;
 
-  // Hero Row
+  // Row 1: Net Liquidation Value, Gross Position Value, Cash Balance
   $("#metric-netliq").textContent = formatMoney(netLiq, ccy);
+  $("#metric-positions").textContent = formatMoney(grossPositionVal, ccy);
+  $("#metric-cash-balance").textContent = formatMoney(cashBalance, ccy);
 
+  // Row 2: Unrealised P&L, Maintenance Margin, Excess Liquidity
   const pnlEl = $("#metric-pnl");
   pnlEl.textContent = formatSignedMoney(unrealizedPnl, ccy);
-  pnlEl.className = `hero-val font-mono ${pnlClass(unrealizedPnl)}`;
+  pnlEl.className = `val-number font-mono ${pnlClass(unrealizedPnl)}`;
 
   const pnlPctEl = $("#metric-pnl-pct");
   pnlPctEl.textContent = formatPct(pnlPct, { signed: true });
   pnlPctEl.className = `hero-pct-badge ${pnlClass(unrealizedPnl)}`;
 
-  // Key Metrics Grid
-  $("#metric-positions").textContent = formatMoney(grossPositionVal, ccy);
-  $("#metric-maint-margin").textContent = formatMoney(maintMargin, ccy);
-  $("#metric-excess-liq").textContent = formatMoney(excessLiq, ccy);
+  // For Maintenance Margin & Excess Liquidity:
+  // When All Accounts is selected, display "—" as summing across brokers is not applicable.
+  if (state.selectedAccount === "") {
+    $("#metric-maint-margin").innerHTML = '<span class="muted">—</span>';
+    $("#metric-excess-liq").innerHTML = '<span class="muted">—</span>';
+  } else {
+    const singleSnap = filteredSnaps[0];
+    const av = singleSnap?.account_values;
+    const maintMargin = av?.maint_margin_req != null
+      ? convertAmount(av.maint_margin_req, av.currency, ccy, state.fxMatrix)
+      : 0;
+    const excessLiq = av?.excess_liquidity != null
+      ? convertAmount(av.excess_liquidity, av.currency, ccy, state.fxMatrix)
+      : 0;
+
+    $("#metric-maint-margin").textContent = formatMoney(maintMargin, ccy);
+    $("#metric-excess-liq").textContent = formatMoney(excessLiq, ccy);
+  }
 }
 
 // ---------------------------------------------------------------------------------------
@@ -415,15 +531,38 @@ function renderPositions() {
   const ccy = state.currency;
   const q = state.search.trim().toLowerCase();
 
+  // Positions are never aggregated even if accounts trade the same symbol
   let rows = getAllFilteredPositions().filter((p) => {
     if (!q) return true;
     return (
       (p.symbol && p.symbol.toLowerCase().includes(q)) ||
       (p.instrument && p.instrument.toLowerCase().includes(q)) ||
       (p.sec_type && p.sec_type.toLowerCase().includes(q)) ||
-      (p.exchange && p.exchange.toLowerCase().includes(q))
+      (p.exchange && p.exchange.toLowerCase().includes(q)) ||
+      (p.broker_name && p.broker_name.toLowerCase().includes(q)) ||
+      (p.account_id && p.account_id.toLowerCase().includes(q))
     );
   });
+
+  // Calculate scope total net liquidation for portfolio weight calculation (per selected account or all accounts)
+  const filteredSnaps = getFilteredSnapshots();
+  const scopeNetLiq = filteredSnaps.reduce(
+    (acc, s) =>
+      acc +
+      convertAmount(
+        s.account_values?.net_liquidation ?? 0,
+        s.account_values?.currency,
+        ccy,
+        state.fxMatrix
+      ),
+    0
+  );
+
+  // Pre-calculate converted market value and weight per current account scope
+  for (const p of rows) {
+    p.marketValConverted = convertAmount(p.market_value, p.currency, ccy, state.fxMatrix);
+    p.weight = scopeNetLiq > 0 ? (p.marketValConverted / scopeNetLiq) : 0;
+  }
 
   const { key, dir } = state.sort;
   rows = rows.toSorted((a, b) => {
@@ -437,14 +576,6 @@ function renderPositions() {
     return String(x).localeCompare(String(y)) * dir;
   });
 
-  const totalFilteredValue = rows.reduce(
-    (acc, p) => acc + convertAmount(p.market_value ?? 0, p.currency, ccy, state.fxMatrix),
-    0
-  );
-  $("#positions-count").textContent = `${rows.length} ${
-    rows.length === 1 ? "position" : "positions"
-  } · ${formatMoney(totalFilteredValue, ccy)}`;
-
   for (const th of document.querySelectorAll("#positions-table th[data-sort]")) {
     th.classList.toggle("sorted", th.dataset.sort === key);
     th.dataset.dir = th.dataset.sort === key ? (dir > 0 ? "asc" : "desc") : "";
@@ -454,49 +585,86 @@ function renderPositions() {
   tbody.innerHTML = rows.length
     ? rows
         .map((p) => {
-          const expiry = p.last_trade_date
-            ? esc(p.last_trade_date)
-            : '<span class="muted">—</span>';
-          const secType = p.sec_type || "STOCKS";
-          const secClass = secType.toLowerCase().replace(/\s+/g, "-");
-          const exchangeBadge = p.exchange
-            ? `<span class="exchange-badge">${esc(p.exchange)}</span>`
-            : '<span class="muted">—</span>';
+          const displayAcct = formatAccountDisplay(p.broker_id, p.account_id);
+          const brokerAccountHtml = `
+            <div class="cell-stacked">
+              <span class="cell-main text-broker">${esc(p.broker_name)}</span>
+              <span class="cell-sub text-account font-mono">${esc(displayAcct)}</span>
+            </div>
+          `;
+
           const symbolHtml = p.symbol
             ? `<span class="symbol-code">${esc(p.symbol)}</span>`
             : '<span class="muted">—</span>';
+
+          const instrumentSymbolHtml = `
+            <div class="cell-stacked">
+              <span class="cell-main instrument-name">${esc(p.instrument)}</span>
+              <span class="cell-sub">${symbolHtml}</span>
+            </div>
+          `;
+
+          const secType = p.sec_type || "STOCKS";
+          const secClass = secType.toLowerCase().replace(/\s+/g, "-");
+          const secBadge = `<span class="sec-badge ${esc(secClass)}">${esc(secType)}</span>`;
+          const exchangeBadge = p.exchange
+            ? `<span class="exchange-badge">${esc(p.exchange)}</span>`
+            : '<span class="muted">—</span>';
+
+          // Type / Exchange column (Upper: Type, Lower: Exchange)
+          const typeExchangeHtml = `
+            <div class="cell-stacked">
+              <span class="cell-main">${secBadge}</span>
+              <span class="cell-sub">${exchangeBadge}</span>
+            </div>
+          `;
+
           const avgPriceHtml =
             p.avg_price != null ? formatMoney(p.avg_price, p.currency) : '<span class="muted">—</span>';
-          const costBasisHtml =
+          const markPriceHtml = formatMoney(p.mark_price, p.currency);
+
+          const costBasisConverted =
             p.cost_basis != null
-              ? formatMoney(convertAmount(p.cost_basis, p.currency, ccy, state.fxMatrix), ccy)
-              : '<span class="muted">—</span>';
+              ? convertAmount(p.cost_basis, p.currency, ccy, state.fxMatrix)
+              : null;
+          const costBasisHtml =
+            costBasisConverted != null ? formatMoney(costBasisConverted, ccy) : '<span class="muted">—</span>';
+
+          const marketValConverted = p.marketValConverted;
+          const pnlConverted = convertAmount(p.unrealized_pnl, p.currency, ccy, state.fxMatrix);
+
+          const lastTradeDateHtml = p.last_trading_date
+            ? esc(p.last_trading_date)
+            : '<span class="muted">—</span>';
+
           const pnlHtml =
-            p.cost_basis != null && p.unrealized_pnl != null
-              ? `<div>${formatSignedMoney(convertAmount(p.unrealized_pnl, p.currency, ccy, state.fxMatrix), ccy)}</div>
+            p.cost_basis != null
+              ? `<div>${formatSignedMoney(pnlConverted, ccy)}</div>
                  <div class="small-pct">${formatPct(p.cost_basis !== 0 ? p.unrealized_pnl / Math.abs(p.cost_basis) : 0, { signed: true })}</div>`
               : '<span class="muted">—</span>';
 
+          // Portfolio weight % calculated per currently selected account
+          let weightHtml = '<span class="muted">—</span>';
+          if (scopeNetLiq > 0) {
+            weightHtml = `<span class="font-mono">${formatPct(p.weight, { signed: false, digits: 2 })}</span>`;
+          }
+
           return `
           <tr>
-            <td>
-              <div class="instrument-name">${esc(p.instrument)}</div>
-            </td>
-            <td>${symbolHtml}</td>
-            <td>
-              <span class="sec-badge ${esc(secClass)}">${esc(secType)}</span>
-            </td>
-            <td>${exchangeBadge}</td>
-            <td>${expiry}</td>
+            <td>${brokerAccountHtml}</td>
+            <td>${instrumentSymbolHtml}</td>
+            <td>${typeExchangeHtml}</td>
             <td class="num font-mono">${formatQty(p.position)}</td>
             <td class="num font-mono">${avgPriceHtml}</td>
-            <td class="num font-mono">${formatMoney(p.mark_price, p.currency)}</td>
+            <td class="num font-mono">${markPriceHtml}</td>
             <td class="num font-mono">${costBasisHtml}</td>
-            <td class="num font-mono strong">${formatMoney(convertAmount(p.market_value, p.currency, ccy, state.fxMatrix), ccy)}</td>
-            <td class="num"><span class="currency-badge">${esc(p.currency)}</span></td>
+            <td class="num font-mono strong">${formatMoney(marketValConverted, ccy)}</td>
+            <td class="font-mono">${lastTradeDateHtml}</td>
             <td class="num font-mono ${p.cost_basis != null ? pnlClass(p.unrealized_pnl) : ""}">
               ${pnlHtml}
             </td>
+            <td class="num">${weightHtml}</td>
+            <td class="num"><span class="currency-badge">${esc(p.currency)}</span></td>
           </tr>`;
         })
         .join("")
@@ -507,8 +675,10 @@ function renderCashBalances() {
   const ccy = state.currency;
   const filteredSnaps = getFilteredSnapshots();
 
+  // Cash balances are not aggregated; each account's cash balance items are displayed separately
   const allCashItems = filteredSnaps.flatMap((s) =>
     (s.account_values?.cash_balances ?? []).map((cb) => ({
+      broker_id: s.broker_id,
       account_id: s.account_id,
       broker_name: s.broker_name,
       currency: cb.currency,
@@ -516,48 +686,42 @@ function renderCashBalances() {
     }))
   );
 
-  const totalCashConverted = allCashItems.reduce(
-    (acc, c) => acc + convertAmount(c.amount, c.currency, ccy, state.fxMatrix),
-    0
-  );
-
-  $("#cash-balances-caption").textContent = `${filteredSnaps.length} ${
-    filteredSnaps.length === 1 ? "account" : "accounts"
-  } · ${formatMoney(totalCashConverted, ccy)} total cash`;
-
   const tbody = $("#cash-table tbody");
   tbody.innerHTML = allCashItems.length
     ? allCashItems
         .map((c) => {
-          const displayAcct =
-            c.broker_name === "Futu" && c.account_id.length > 6
-              ? `...${c.account_id.slice(-4)}`
-              : c.account_id;
+          const displayAcct = formatAccountDisplay(c.broker_id, c.account_id);
+          const brokerAccountHtml = `
+            <div class="cell-stacked">
+              <span class="cell-main text-broker">${esc(c.broker_name)}</span>
+              <span class="cell-sub text-account font-mono">${esc(displayAcct)}</span>
+            </div>
+          `;
+
+          const rawAmountHtml = formatMoney(c.amount, c.currency);
+          const convertedAmount = convertAmount(c.amount, c.currency, ccy, state.fxMatrix);
+          const convertedAmountHtml = formatMoney(convertedAmount, ccy);
+
           return `
           <tr>
-            <td>
-              <span class="account-tag">${esc(displayAcct)}</span>
-            </td>
-            <td>
-              <span class="broker-name">${esc(c.broker_name)}</span>
-            </td>
+            <td>${brokerAccountHtml}</td>
             <td class="num">
               <span class="currency-badge">${esc(c.currency)}</span>
             </td>
             <td class="num font-mono strong ${pnlClass(c.amount)}">
-              ${formatMoney(c.amount, c.currency)}
+              ${rawAmountHtml}
             </td>
             <td class="num font-mono strong ${pnlClass(c.amount)}">
-              ${formatMoney(convertAmount(c.amount, c.currency, ccy, state.fxMatrix), ccy)}
+              ${convertedAmountHtml}
             </td>
           </tr>`;
         })
         .join("")
-    : `<tr><td colspan="5" class="empty muted">No cash balances available.</td></tr>`;
+    : `<tr><td colspan="4" class="empty muted">No cash balances available.</td></tr>`;
 }
 
 // ---------------------------------------------------------------------------------------
-// Event Wiring & Subpage Navigation
+// Subpage Navigation & Settings Handlers
 // ---------------------------------------------------------------------------------------
 
 function switchPage(pageId) {
@@ -574,6 +738,13 @@ function switchPage(pageId) {
     subpage.hidden = !isMatch;
     subpage.classList.toggle("active", isMatch);
   }
+
+  if (pageId === "settings") {
+    renderSettings();
+    testBrokerConnections().then(() => {
+      if (state.activePage === "settings") renderSettings();
+    });
+  }
 }
 
 function setupSidebarNavigation() {
@@ -586,15 +757,167 @@ function setupSidebarNavigation() {
     });
   }
 
-  // Support initial hash (e.g. #about, #settings)
   const initialHash = window.location.hash.replace("#", "").toLowerCase();
   if (initialHash && $(`#page-${initialHash}`)) {
     switchPage(initialHash);
   }
 }
 
+// ---------------------------------------------------------------------------------------
+// Settings Page Logic
+// ---------------------------------------------------------------------------------------
+
+async function renderSettings() {
+  const listEl = $("#settings-brokers-list");
+  if (!listEl) return;
+
+  const isEditing = state.settings.isEditing;
+  const editBtn = $("#settings-edit-btn");
+  const saveBtn = $("#settings-save-btn");
+
+  if (editBtn) editBtn.disabled = isEditing;
+  if (saveBtn) saveBtn.disabled = !isEditing;
+
+  const enabledBrokers = state.settings.enabledBrokers;
+  const gateways = state.settings.brokerGateways;
+
+  let html = "";
+  for (const b of state.brokers) {
+    const isChecked = enabledBrokers[b.id] !== false;
+    const gw = gateways[b.id] || {
+      host: "127.0.0.1",
+      port: b.id === "ibkr" ? 7496 : 11111,
+    };
+    const conn = state.settings.connectionStatus[b.id];
+
+    let statusBadge = "";
+    if (conn) {
+      if (conn.connected) {
+        statusBadge = `<span class="conn-status ok" title="${esc(conn.message)}">✓ Connected</span>`;
+      } else {
+        statusBadge = `<span class="conn-status bad" title="${esc(conn.message)}">✗ Offline</span>`;
+      }
+    } else {
+      statusBadge = `<span class="conn-status muted">Untested</span>`;
+    }
+
+    html += `
+      <div class="settings-broker-row" data-broker="${esc(b.id)}">
+        <label class="settings-checkbox-wrap">
+          <input type="checkbox" class="broker-enable-toggle" data-broker="${esc(b.id)}" ${
+            isChecked ? "checked" : ""
+          } ${isEditing ? "" : "disabled"} />
+          <span class="settings-broker-name">${esc(b.name)}</span>
+        </label>
+
+        <div class="settings-gateway-fields">
+          <div class="settings-field-group">
+            <label class="field-label" for="host-${esc(b.id)}">Host / IP:</label>
+            <input type="text" id="host-${esc(b.id)}" class="host-input font-mono" data-broker="${esc(b.id)}" value="${esc(gw.host || "127.0.0.1")}" ${
+              isEditing ? "" : "disabled"
+            } placeholder="127.0.0.1" />
+          </div>
+
+          <div class="settings-field-group">
+            <label class="field-label" for="port-${esc(b.id)}">Port:</label>
+            <input type="number" id="port-${esc(b.id)}" class="port-input font-mono" data-broker="${esc(b.id)}" value="${gw.port}" ${
+              isEditing ? "" : "disabled"
+            } min="1" max="65535" />
+          </div>
+        </div>
+
+        <div class="settings-conn-col">
+          ${statusBadge}
+        </div>
+      </div>
+    `;
+  }
+
+  listEl.innerHTML = html;
+}
+
+async function testBrokerConnections() {
+  for (const b of state.brokers) {
+    try {
+      const res = await apiGet(`/api/v1/broker-connection-test?broker_id=${encodeURIComponent(b.id)}`);
+      state.settings.connectionStatus[b.id] = {
+        connected: res.connected,
+        message: res.message,
+      };
+    } catch (e) {
+      state.settings.connectionStatus[b.id] = {
+        connected: false,
+        message: String(e?.message ?? e),
+      };
+    }
+  }
+}
+
+function wireSettingsEvents() {
+  const editBtn = $("#settings-edit-btn");
+  const saveBtn = $("#settings-save-btn");
+
+  if (editBtn) {
+    editBtn.addEventListener("click", () => {
+      state.settings.isEditing = true;
+      renderSettings();
+    });
+  }
+
+  if (saveBtn) {
+    saveBtn.addEventListener("click", async () => {
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+
+      // 1. Gather enabled checkboxes
+      const toggles = $$(".broker-enable-toggle");
+      const enabledMap = {};
+      for (const t of toggles) {
+        enabledMap[t.dataset.broker] = t.checked;
+      }
+      state.settings.enabledBrokers = enabledMap;
+      saveStoredEnabledBrokers(enabledMap);
+
+      // 2. Gather host and port for each broker
+      for (const b of state.brokers) {
+        const hostInp = $(`#host-${b.id}`);
+        const portInp = $(`#port-${b.id}`);
+        const hostVal = hostInp && hostInp.value.trim() ? hostInp.value.trim() : "127.0.0.1";
+        const portVal = portInp ? Number.parseInt(portInp.value, 10) : (b.id === "ibkr" ? 7496 : 11111);
+
+        state.settings.brokerGateways[b.id] = { host: hostVal, port: portVal };
+        try {
+          await apiPost("/api/v1/broker-gateway-config", {
+            broker_id: b.id,
+            host: hostVal,
+            port: portVal,
+          });
+        } catch (e) {
+          console.warn(`Failed to update gateway config for ${b.id}:`, e);
+        }
+      }
+
+      // 3. Test connections
+      await testBrokerConnections();
+
+      // 4. Exit edit mode
+      state.settings.isEditing = false;
+      renderSettings();
+      saveBtn.textContent = "Save";
+
+      // 5. Reload portfolio data with updated settings
+      load();
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------------------
+// Initialization & Global Event Wiring
+// ---------------------------------------------------------------------------------------
+
 function wireEvents() {
   setupSidebarNavigation();
+  wireSettingsEvents();
 
   // Head controls global data refresh
   $("#refresh-btn").addEventListener("click", load);

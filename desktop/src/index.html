@@ -3,10 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>uninv - Unified Portfolio</title>
+    <title>uninv - Unified Investing</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
+    <link rel="icon" type="image/png" href="assets/favicon.png" />
     <link rel="stylesheet" href="styles.css" />
     <script type="module" src="js/main.js"></script>
   </head>
@@ -17,13 +18,24 @@
 
       <div class="headbar-center">
         <div class="brand">
-          <span class="logo">u</span>
+          <img class="logo-img" src="assets/icon.svg" alt="uninv logo" />
           <span class="brand-name">uninv</span>
         </div>
       </div>
 
       <div class="headbar-right">
-        <span id="as-of" class="as-of-time"></span>
+        <!-- As Of with interactive breakdown tooltip -->
+        <div class="as-of-container" id="as-of-container" tabindex="0">
+          <span id="as-of" class="as-of-time"></span>
+          <span class="as-of-info-icon" title="View endpoint timestamps">ⓘ</span>
+          <div class="as-of-tooltip" id="as-of-tooltip">
+            <div class="tooltip-header">Endpoint Timestamps</div>
+            <div class="tooltip-list" id="as-of-tooltip-list">
+              <div class="tooltip-empty">No queries yet</div>
+            </div>
+          </div>
+        </div>
+
         <div class="currency-picker">
           <label for="currency-select" class="currency-label">Currency</label>
           <select id="currency-select" class="currency-dropdown">
@@ -40,7 +52,15 @@
             <option value="NZD">NZD (NZ$)</option>
           </select>
         </div>
-        <button id="refresh-btn" class="btn btn-primary" type="button">Refresh</button>
+
+        <button id="refresh-btn" class="btn btn-icon btn-refresh" type="button" title="Refresh portfolio">
+          <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+            <path d="M3 3v5h5"/>
+            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+            <path d="M16 21h5v-5"/>
+          </svg>
+        </button>
       </div>
     </header>
 
@@ -55,26 +75,6 @@
               <path d="m19 9-5 5-4-4-3 3"/>
             </svg>
             <span class="sidebar-label">Portfolio</span>
-          </button>
-
-          <button type="button" class="sidebar-item" data-page="dca">
-            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/>
-              <line x1="16" x2="16" y1="2" y2="6"/>
-              <line x1="8" x2="8" y1="2" y2="6"/>
-              <line x1="3" x2="21" y1="10" y2="10"/>
-              <path d="m9 16 2 2 4-4"/>
-            </svg>
-            <span class="sidebar-label">DCA Planning</span>
-          </button>
-
-          <button type="button" class="sidebar-item" data-page="strategies">
-            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"/>
-              <path d="M8 12h8"/>
-              <path d="m12 16 4-4-4-4"/>
-            </svg>
-            <span class="sidebar-label">Option Strategies</span>
           </button>
 
           <button type="button" class="sidebar-item" data-page="settings">
@@ -107,9 +107,9 @@
       <main class="main-display">
         <div id="error-banner" class="banner banner-error" hidden></div>
 
-        <!-- SUBPAGE 1: Portfolio (Currently Constructed) -->
+        <!-- SUBPAGE 1: Portfolio -->
         <div id="page-portfolio" class="subpage active">
-          <!-- SECTION 1: Accounts (Horizontal tiles) -->
+          <!-- SECTION 1: Accounts (Horizontal tiles selector) -->
           <section class="panel-section accounts-section">
             <div class="section-header">
               <div class="section-title-group">
@@ -122,53 +122,53 @@
             </div>
           </section>
 
-          <!-- SECTION 2: Metrics (One cohesive big section, not tiles) -->
+          <!-- SECTION 2: Account Values (Cohesive board) -->
           <section class="panel-section metrics-section">
             <div class="metrics-board">
               <div class="metrics-board-header">
                 <div class="metrics-title-group">
-                  <span class="metrics-scope-label" id="metrics-scope-label">ALL ACCOUNTS CONSOLIDATED</span>
-                  <span class="metrics-scope-desc" id="metrics-scope-desc">Aggregated across all connected brokers</span>
-                </div>
-                <div class="metrics-currency-indicator">
-                  <span class="indicator-dot"></span>
-                  <span id="metrics-currency-name">USD</span>
+                  <h2 class="account-values-title">Account Values</h2>
+                  <span class="metrics-scope-label" id="metrics-scope-label">All Accounts Consolidated</span>
                 </div>
               </div>
 
-              <!-- Hero Metric Row -->
-              <div class="metrics-hero-row">
-                <div class="hero-metric-item">
-                  <div class="hero-label">NET LIQUIDATION VALUE</div>
-                  <div class="hero-val font-mono" id="metric-netliq">–</div>
+              <!-- Two structured rows of Account Values -->
+              <!-- Row 1: Net Liquidation Value, Gross Position Value, Cash Balance -->
+              <div class="account-values-grid row-1">
+                <div class="account-val-item hero">
+                  <div class="val-label">NET LIQUIDATION VALUE</div>
+                  <div class="val-number font-mono" id="metric-netliq">–</div>
                 </div>
 
-                <div class="hero-divider"></div>
+                <div class="account-val-item">
+                  <div class="val-label">Gross Position Value</div>
+                  <div class="val-number font-mono" id="metric-positions">–</div>
+                </div>
 
-                <div class="hero-metric-item">
-                  <div class="hero-label">UNREALISED P&amp;L</div>
-                  <div class="hero-pnl-group">
-                    <span class="hero-val font-mono" id="metric-pnl">–</span>
+                <div class="account-val-item">
+                  <div class="val-label">Cash Balance</div>
+                  <div class="val-number font-mono" id="metric-cash-balance">–</div>
+                </div>
+              </div>
+
+              <!-- Row 2: Unrealised P&L, Maintenance Margin, Excess Liquidity -->
+              <div class="account-values-grid row-2">
+                <div class="account-val-item">
+                  <div class="val-label">Unrealised P&amp;L</div>
+                  <div class="val-pnl-group">
+                    <span class="val-number font-mono" id="metric-pnl">–</span>
                     <span class="hero-pct-badge" id="metric-pnl-pct">–</span>
                   </div>
                 </div>
-              </div>
 
-              <!-- Structured Metrics Grid (Key Figures) -->
-              <div class="metrics-grid">
-                <div class="metric-cell">
-                  <div class="cell-label">Gross Position Value</div>
-                  <div class="cell-value font-mono" id="metric-positions">–</div>
+                <div class="account-val-item">
+                  <div class="val-label">Maintenance Margin</div>
+                  <div class="val-number font-mono" id="metric-maint-margin">–</div>
                 </div>
 
-                <div class="metric-cell">
-                  <div class="cell-label">Maint Margin Req</div>
-                  <div class="cell-value font-mono" id="metric-maint-margin">–</div>
-                </div>
-
-                <div class="metric-cell">
-                  <div class="cell-label">Excess Liquidity</div>
-                  <div class="cell-value font-mono" id="metric-excess-liq">–</div>
+                <div class="account-val-item">
+                  <div class="val-label">Excess Liquidity</div>
+                  <div class="val-number font-mono" id="metric-excess-liq">–</div>
                 </div>
               </div>
             </div>
@@ -181,7 +181,6 @@
               <div class="subsection-header">
                 <div class="subsection-title-group">
                   <h3 class="subsection-title">Positions</h3>
-                  <span class="positions-count-badge" id="positions-count"></span>
                 </div>
                 <div class="positions-search-wrapper">
                   <input id="search" type="search" placeholder="Search symbol, instrument, or type…" />
@@ -192,18 +191,18 @@
                 <table id="positions-table">
                   <thead>
                     <tr>
-                      <th data-sort="instrument">Instrument</th>
-                      <th data-sort="symbol">Symbol</th>
-                      <th data-sort="sec_type">Type</th>
-                      <th data-sort="exchange">Exch</th>
-                      <th data-sort="last_trade_date">Expiry</th>
+                      <th data-sort="broker_name">Broker / Account</th>
+                      <th data-sort="instrument">Instrument / Symbol</th>
+                      <th data-sort="sec_type">Type / Exchange</th>
                       <th data-sort="position" class="num">Position</th>
                       <th data-sort="avg_price" class="num">Avg Price</th>
                       <th data-sort="mark_price" class="num">Mark Price</th>
                       <th data-sort="cost_basis" class="num">Cost Basis</th>
                       <th data-sort="market_value" class="num">Market Value</th>
-                      <th data-sort="currency" class="num">Currency</th>
+                      <th data-sort="last_trading_date">Last Trading Date</th>
                       <th data-sort="unrealized_pnl" class="num">Unrealised P&amp;L</th>
+                      <th data-sort="weight" class="num">Weight</th>
+                      <th data-sort="currency" class="num">Currency</th>
                     </tr>
                   </thead>
                   <tbody></tbody>
@@ -216,7 +215,6 @@
               <div class="subsection-header">
                 <div class="subsection-title-group">
                   <h3 class="subsection-title">Cash Balances</h3>
-                  <span class="muted" id="cash-balances-caption"></span>
                 </div>
               </div>
 
@@ -224,11 +222,10 @@
                 <table id="cash-table">
                   <thead>
                     <tr>
-                      <th>Account</th>
-                      <th>Broker</th>
+                      <th>Broker / Account</th>
                       <th class="num">Currency</th>
-                      <th class="num">Amount (Raw)</th>
-                      <th class="num">Converted Balance</th>
+                      <th class="num">Amount (RAW)</th>
+                      <th class="num">AMOUNT (CONVERTED)</th>
                     </tr>
                   </thead>
                   <tbody></tbody>
@@ -238,69 +235,50 @@
           </section>
         </div>
 
-        <!-- SUBPAGE 2: DCA Planning (Placeholder) -->
-        <div id="page-dca" class="subpage" hidden>
-          <div class="placeholder-card">
-            <div class="placeholder-icon">📅</div>
-            <h2>DCA Planning</h2>
-            <p class="muted">
-              Automated recurring investment schedules and dollar-cost averaging plan manager across multi-broker portfolios.
-            </p>
-            <span class="badge-soon">Coming Soon</span>
-          </div>
-        </div>
-
-        <!-- SUBPAGE 3: Option Strategies (Placeholder) -->
-        <div id="page-strategies" class="subpage" hidden>
-          <div class="placeholder-card">
-            <div class="placeholder-icon">📈</div>
-            <h2>Option Strategies</h2>
-            <p class="muted">
-              Payoff diagram visualizer, multi-leg strategy builder, and Greek risk modeling for options and futures options.
-            </p>
-            <span class="badge-soon">Coming Soon</span>
-          </div>
-        </div>
-
-        <!-- SUBPAGE 4: Settings (Placeholder) -->
+        <!-- SUBPAGE 2: Settings -->
         <div id="page-settings" class="subpage" hidden>
-          <div class="placeholder-card">
-            <div class="placeholder-icon">⚙️</div>
-            <h2>Settings</h2>
-            <p class="muted">
-              Broker gateway daemons (IBKR TWS on 7496, Futu OpenD on 11111), system base currency defaults, and display configuration.
-            </p>
-            <span class="badge-soon">Under Development</span>
+          <div class="settings-container">
+            <div class="settings-card">
+              <div class="settings-card-header">
+                <div class="settings-title-group">
+                  <h2 class="settings-title">Broker Gateways</h2>
+                  <p class="settings-desc">
+                    Configure broker gateway connection host and ports, and toggle which brokers are fetched.
+                  </p>
+                </div>
+                <div class="settings-actions">
+                  <button id="settings-edit-btn" class="btn btn-secondary" type="button">Edit</button>
+                  <button id="settings-save-btn" class="btn btn-primary" type="button" disabled>Save</button>
+                </div>
+              </div>
+
+              <div id="settings-brokers-list" class="settings-brokers-list">
+                <!-- Populated dynamically: broker checkboxes, port inputs, connection test indicators -->
+                <div class="muted">Loading broker settings…</div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- SUBPAGE 5: About -->
+        <!-- SUBPAGE 3: About -->
         <div id="page-about" class="subpage" hidden>
           <div class="about-card">
-            <div class="about-logo-badge">
-              <span class="logo">u</span>
+            <div class="about-logo-wrapper">
+              <img class="about-logo-img" src="assets/icon.svg" alt="uninv" />
             </div>
             <h2 class="about-title">uninv</h2>
-            <div class="about-tagline"><strong>uni</strong>fied <strong>inv</strong>esting</div>
+            <div class="about-tagline">Unified Investing</div>
             <p class="about-desc">
-              <strong>uninv</strong> (from the first three letters of <strong>uni</strong>fied and the first three letters of <strong>inv</strong>esting) is a privacy-first, local desktop platform that combines multiple broker accounts into a single consolidated view.
+              A private, local desktop application designed for retail investors to unify holdings, cash balances, and performance metrics across multiple broker accounts in real time.
             </p>
-            <div class="about-meta-grid">
-              <div class="about-meta-item">
-                <span class="meta-label">Version</span>
-                <span class="meta-val font-mono">0.1.0</span>
+            <div class="about-details-card">
+              <div class="about-detail-row">
+                <span class="detail-label">Version</span>
+                <span class="detail-value font-mono">1.0.0</span>
               </div>
-              <div class="about-meta-item">
-                <span class="meta-label">Security Model</span>
-                <span class="meta-val">100% Local · No Login · No Membership</span>
-              </div>
-              <div class="about-meta-item">
-                <span class="meta-label">Broker Daemons</span>
-                <span class="meta-val">IBKR TWS / Gateway (7496) · Futu OpenD (11111)</span>
-              </div>
-              <div class="about-meta-item">
-                <span class="meta-label">Tech Stack</span>
-                <span class="meta-val">FastAPI + Python 3.13 (Backend) · Tauri 2 (Rust Shell)</span>
+              <div class="about-detail-row">
+                <span class="detail-label">Author</span>
+                <span class="detail-value">DHKLeung</span>
               </div>
             </div>
           </div>
