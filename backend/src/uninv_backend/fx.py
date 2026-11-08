@@ -3,12 +3,11 @@
 Constructs a complete (N x N) cross currency matrix across all supported currencies
 by fetching live quotes for directly-traded Forex market pairs on IBKR (IDEALPRO)
 against the global USD hub, with automatic inversion, cross-rate synthesis,
-in-memory caching, and robust fallbacks.
+and robust fallbacks. Every request computes fresh live rates with zero caching.
 """
 
 import asyncio
 import logging
-import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -59,15 +58,10 @@ DEFAULT_USD_RATES: dict[Currency, float] = {
 class FxRouter:
     """Calculates and serves the complete FX exchange rate matrix across all currencies."""
 
-    def __init__(self, cache_ttl_seconds: float = 60.0) -> None:
-        self.cache_ttl = cache_ttl_seconds
-        self._cached_matrix: tuple[dict[Currency, dict[Currency, float]], float] | None = None
-
     def _synthesize_matrix(
         self,
         quotes: dict[str, float],
         query_asof: datetime,
-        now: float,
         currencies: list[Currency],
     ) -> FxMatrixResponse:
         """Synthesize reciprocal and cross-currency rates matrix from probed quotes."""
@@ -93,7 +87,6 @@ class FxRouter:
             for v in currencies:
                 rates[u][v] = 1.0 if u == v else usd_val[u] / usd_val[v]
 
-        self._cached_matrix = (rates, now)
         return FxMatrixResponse(asof=query_asof, currencies=currencies, rates=rates)
 
     async def get_matrix(
@@ -101,16 +94,9 @@ class FxRouter:
         batch_probe_fn: Callable[[list[str]], Any],
         asof: datetime | None = None,
     ) -> FxMatrixResponse:
-        """Construct the complete (N x N) currency conversion matrix."""
+        """Construct the complete (N x N) currency conversion matrix without caching."""
         query_asof = asof or datetime.now(UTC)
-        now = time.time()
         currencies = list(Currency)
-
-        # Check in-memory matrix cache
-        if self._cached_matrix is not None:
-            cached_rates, cached_ts = self._cached_matrix
-            if now - cached_ts < self.cache_ttl:
-                return FxMatrixResponse(asof=query_asof, currencies=currencies, rates=cached_rates)
 
         quotes_res = batch_probe_fn(ALL_IDEALPRO_PAIRS)
         if asyncio.iscoroutine(quotes_res):
@@ -121,7 +107,7 @@ class FxRouter:
                 quotes_res = {}
 
         quotes: dict[str, float] = quotes_res or {}
-        return self._synthesize_matrix(quotes, query_asof, now, currencies)
+        return self._synthesize_matrix(quotes, query_asof, currencies)
 
     async def get_rate(
         self,

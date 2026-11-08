@@ -437,7 +437,7 @@ async def test_fx_router_fallback_on_missing_quote() -> None:
 async def test_fx_router_async_matrix() -> None:
     from uninv_backend.fx import FxRouter
 
-    router = FxRouter(cache_ttl_seconds=0.1)
+    router = FxRouter()
 
     async def mock_async_probe(pairs: list[str]) -> dict[str, float]:
         return {"EURUSD": 1.10}

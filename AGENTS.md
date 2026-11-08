@@ -120,7 +120,7 @@ _Last updated: 2026-11-08_
     - Raw numbers: zero rounding in backend; full raw float precision preserved.
   - `AccountValues` model:
     - Account-wide totals (non-BASE, explicit currency): `available_funds`, `buying_power`, `cash_balance`, `cash_balances` (multi-currency list), `equity_with_loan_value`, `excess_liquidity`, `gross_position_value`, `init_margin_req`, `maint_margin_req`, `net_liquidation`, `unrealized_pnl`.
-  - `IBKRService` in `backend/src/uninv_backend/ibkr.py` connects directly to TWS on port 7496 with `readonly=True` (connects in ~0.1s), client ID retry resilience, pure native `asyncio` execution on Uvicorn's main loop (zero manual threading/locks), strict network timeouts on Forex batch probes and contract qualification, and in-memory contract name/FX caching (60s TTL).
+  - `IBKRService` in `backend/src/uninv_backend/ibkr.py` connects directly to TWS on port 7496 with `readonly=True` (connects in ~0.1s), client ID retry resilience, pure native `asyncio` execution on Uvicorn's main loop (zero manual threading/locks), strict network timeouts on Forex batch probes and contract qualification, and zero endpoint caching (every request returns a completely fresh, live snapshot).
   - All 22 backend tests pass, Ruff check passes, Tauri `cargo check` passes.
 - ✅ Global Data Pulling & Merged FX Matrix Architecture:
   - Unified `/api/v1/fx` endpoint returns `FxMatrixResponse` containing `asof` timestamp, `currencies` list, and full (11x11) `rates` conversion matrix (`rates[from][to]`).
