@@ -8,22 +8,22 @@ import { apiGet, backendUrl } from "./api.js";
 import {
   CURRENCY_SYMBOLS,
   convertAmount,
-  convertCurrency,
   esc,
   formatMoney,
   formatPct,
   formatQty,
   formatSignedMoney,
   pnlClass,
-  setFxRate,
 } from "./format.js";
 
 const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
 
 const state = {
+  activePage: "portfolio",
   brokers: [],
   snapshots: [], // list of BrokerAccountSnapshot objects
-  selectedAccount: "", // empty for "All", or account_id
+  selectedAccount: "", // empty for "All", or account_id string
   search: "",
   currency: "USD",
   asof: null,
@@ -162,7 +162,8 @@ async function load() {
 async function setBackendStatus(ok) {
   const url = await backendUrl();
   $("#backend-status").className = `dot ${ok ? "dot-ok" : "dot-bad"}`;
-  $("#backend-label").textContent = `Backend: ${url} — ${ok ? "connected" : "unreachable"}`;
+  $("#backend-label").textContent = `Backend: ${ok ? "connected" : "unreachable"}`;
+  $("#backend-label").title = `${url} (${ok ? "healthy" : "offline"})`;
 }
 
 function showError(message) {
@@ -176,14 +177,13 @@ function hideError() {
 }
 
 // ---------------------------------------------------------------------------------------
-// Rendering
+// Rendering Pipeline
 // ---------------------------------------------------------------------------------------
 
 function render() {
   renderHeader();
-  renderKpis();
   renderAccounts();
-  renderFilterPills();
+  renderMetrics();
   renderPositions();
   renderCashBalances();
 }
@@ -219,194 +219,266 @@ function getAllFilteredPositions() {
   );
 }
 
-function renderKpis() {
+/**
+ * Section 1: Accounts (Horizontal tiles)
+ */
+function renderAccounts() {
+  const ccy = state.currency;
+  const listEl = $("#accounts-horizontal-list");
+  if (!listEl) return;
+
+  const totalAccounts = state.snapshots.length;
+  $("#accounts-caption").textContent = `${totalAccounts} accounts · ${state.brokers.length} broker(s)`;
+
+  // Tile 1: "All Accounts"
+  const allNetLiqConverted = state.snapshots.reduce(
+    (acc, s) =>
+      acc +
+      convertAmount(
+        s.account_values?.net_liquidation ?? 0,
+        s.account_values?.currency,
+        ccy,
+        state.fxRates
+      ),
+    0
+  );
+
+  const isAllActive = state.selectedAccount === "";
+  let html = `
+    <div class="account-tile ${isAllActive ? "active" : ""}" data-account="">
+      <div class="account-tile-header">
+        <span class="account-tile-name">All Accounts</span>
+        <span class="account-tile-badge">Consolidated</span>
+      </div>
+      <div class="account-tile-body">
+        <span class="account-tile-val font-mono">${formatMoney(allNetLiqConverted, ccy)}</span>
+        <span class="account-tile-caption">${totalAccounts} accounts total</span>
+      </div>
+    </div>
+  `;
+
+  // Tile 2+: Individual Broker Accounts
+  for (const s of state.snapshots) {
+    const isActive = state.selectedAccount === s.account_id;
+    const av = s.account_values;
+    const acctNetLiq = convertAmount(av?.net_liquidation ?? 0, av?.currency, ccy, state.fxRates);
+    const posCount = s.positions?.length ?? 0;
+
+    html += `
+      <div class="account-tile ${isActive ? "active" : ""}" data-account="${esc(s.account_id)}">
+        <div class="account-tile-header">
+          <span class="account-tile-name">${esc(s.account_id)}</span>
+          <span class="account-tile-badge">${esc(s.broker_name)}</span>
+        </div>
+        <div class="account-tile-body">
+          <span class="account-tile-val font-mono">${formatMoney(acctNetLiq, ccy)}</span>
+          <span class="account-tile-caption">${posCount} ${posCount === 1 ? "position" : "positions"}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  listEl.innerHTML = html;
+
+  for (const tile of listEl.querySelectorAll(".account-tile")) {
+    tile.addEventListener("click", () => {
+      const acctId = tile.dataset.account;
+      // Selecting the same account toggles back to All
+      if (state.selectedAccount === acctId && acctId !== "") {
+        state.selectedAccount = "";
+      } else {
+        state.selectedAccount = acctId;
+      }
+      renderAccounts();
+      renderMetrics();
+      renderPositions();
+      renderCashBalances();
+    });
+  }
+}
+
+/**
+ * Section 2: Metrics Board (One big cohesive section, not tiles)
+ */
+function renderMetrics() {
   const ccy = state.currency;
   const filteredSnaps = getFilteredSnapshots();
 
-  const netLiqConverted = filteredSnaps.reduce(
-    (acc, s) => acc + convertAmount(s.account_values?.net_liquidation ?? 0, s.account_values?.currency, ccy, state.fxRates),
-    0
-  );
-  const positionValConverted = filteredSnaps.reduce(
-    (acc, s) => acc + convertAmount(s.account_values?.gross_position_value ?? 0, s.account_values?.currency, ccy, state.fxRates),
-    0
-  );
-  const cashValConverted = filteredSnaps.reduce(
-    (acc, s) => acc + convertAmount(s.account_values?.cash_balance ?? 0, s.account_values?.currency, ccy, state.fxRates),
-    0
-  );
-  const totalUnrealizedPnlConverted = filteredSnaps.reduce(
-    (acc, s) => acc + convertAmount(s.account_values?.unrealized_pnl ?? 0, s.account_values?.currency, ccy, state.fxRates),
-    0
-  );
-  const availFundsConverted = filteredSnaps.reduce(
-    (acc, s) => acc + convertAmount(s.account_values?.available_funds ?? 0, s.account_values?.currency, ccy, state.fxRates),
-    0
-  );
-  const buyingPowerConverted = filteredSnaps.reduce(
-    (acc, s) => acc + convertAmount(s.account_values?.buying_power ?? 0, s.account_values?.currency, ccy, state.fxRates),
+  // Header Scope Description
+  if (state.selectedAccount === "") {
+    $("#metrics-scope-label").textContent = "ALL ACCOUNTS CONSOLIDATED";
+    $("#metrics-scope-desc").textContent = `Aggregated across all ${state.snapshots.length} connected accounts`;
+  } else {
+    const snap = state.snapshots.find((s) => s.account_id === state.selectedAccount);
+    const brokerName = snap?.broker_name || "Broker";
+    $("#metrics-scope-label").textContent = `ACCOUNT: ${state.selectedAccount}`;
+    $("#metrics-scope-desc").textContent = `${brokerName} account-level margin & balances`;
+  }
+  $("#metrics-currency-name").textContent = ccy;
+
+  // Aggregate values
+  const netLiq = filteredSnaps.reduce(
+    (acc, s) =>
+      acc +
+      convertAmount(
+        s.account_values?.net_liquidation ?? 0,
+        s.account_values?.currency,
+        ccy,
+        state.fxRates
+      ),
     0
   );
 
+  const unrealizedPnl = filteredSnaps.reduce(
+    (acc, s) =>
+      acc +
+      convertAmount(
+        s.account_values?.unrealized_pnl ?? 0,
+        s.account_values?.currency,
+        ccy,
+        state.fxRates
+      ),
+    0
+  );
+
+  const equityWithLoan = filteredSnaps.reduce(
+    (acc, s) =>
+      acc +
+      convertAmount(
+        s.account_values?.equity_with_loan_value ?? 0,
+        s.account_values?.currency,
+        ccy,
+        state.fxRates
+      ),
+    0
+  );
+
+  const cashBalance = filteredSnaps.reduce(
+    (acc, s) =>
+      acc +
+      convertAmount(
+        s.account_values?.cash_balance ?? 0,
+        s.account_values?.currency,
+        ccy,
+        state.fxRates
+      ),
+    0
+  );
+
+  const grossPositionVal = filteredSnaps.reduce(
+    (acc, s) =>
+      acc +
+      convertAmount(
+        s.account_values?.gross_position_value ?? 0,
+        s.account_values?.currency,
+        ccy,
+        state.fxRates
+      ),
+    0
+  );
+
+  const availableFunds = filteredSnaps.reduce(
+    (acc, s) =>
+      acc +
+      convertAmount(
+        s.account_values?.available_funds ?? 0,
+        s.account_values?.currency,
+        ccy,
+        state.fxRates
+      ),
+    0
+  );
+
+  const buyingPower = filteredSnaps.reduce(
+    (acc, s) =>
+      acc +
+      convertAmount(
+        s.account_values?.buying_power ?? 0,
+        s.account_values?.currency,
+        ccy,
+        state.fxRates
+      ),
+    0
+  );
+
+  const excessLiq = filteredSnaps.reduce(
+    (acc, s) =>
+      acc +
+      convertAmount(
+        s.account_values?.excess_liquidity ?? 0,
+        s.account_values?.currency,
+        ccy,
+        state.fxRates
+      ),
+    0
+  );
+
+  const initMargin = filteredSnaps.reduce(
+    (acc, s) =>
+      acc +
+      convertAmount(
+        s.account_values?.init_margin_req ?? 0,
+        s.account_values?.currency,
+        ccy,
+        state.fxRates
+      ),
+    0
+  );
+
+  const maintMargin = filteredSnaps.reduce(
+    (acc, s) =>
+      acc +
+      convertAmount(
+        s.account_values?.maint_margin_req ?? 0,
+        s.account_values?.currency,
+        ccy,
+        state.fxRates
+      ),
+    0
+  );
+
+  // Compute Unrealized PnL %
   const totalPositions = getAllFilteredPositions();
   const totalCostBasisConverted = totalPositions.reduce(
     (acc, p) => acc + convertAmount(p.cost_basis ?? 0, p.currency, ccy, state.fxRates),
     0
   );
-  const totalPnlPct = totalCostBasisConverted !== 0 ? totalUnrealizedPnlConverted / Math.abs(totalCostBasisConverted) : 0;
+  const pnlPct =
+    totalCostBasisConverted !== 0
+      ? unrealizedPnl / Math.abs(totalCostBasisConverted)
+      : grossPositionVal !== 0
+      ? unrealizedPnl / Math.abs(grossPositionVal)
+      : 0;
 
-  $("#kpi-netliq").textContent = formatMoney(netLiqConverted, ccy);
-  $("#kpi-positions").textContent = formatMoney(positionValConverted, ccy);
-  $("#kpi-cash").textContent = formatMoney(cashValConverted, ccy);
+  // Hero Row
+  $("#metric-netliq").textContent = formatMoney(netLiq, ccy);
 
-  const pnlEl = $("#kpi-pnl");
-  pnlEl.textContent = formatSignedMoney(totalUnrealizedPnlConverted, ccy);
-  pnlEl.className = `kpi-value ${pnlClass(totalUnrealizedPnlConverted)}`;
+  const pnlEl = $("#metric-pnl");
+  pnlEl.textContent = formatSignedMoney(unrealizedPnl, ccy);
+  pnlEl.className = `hero-val font-mono ${pnlClass(unrealizedPnl)}`;
 
-  const pnlPctEl = $("#kpi-pnl-pct");
-  pnlPctEl.textContent = formatPct(totalPnlPct, { signed: true });
-  pnlPctEl.className = `kpi-sub ${pnlClass(totalUnrealizedPnlConverted)}`;
+  const pnlPctEl = $("#metric-pnl-pct");
+  pnlPctEl.textContent = formatPct(pnlPct, { signed: true });
+  pnlPctEl.className = `hero-pct-badge ${pnlClass(unrealizedPnl)}`;
 
-  $("#kpi-avail").textContent = formatMoney(availFundsConverted, ccy);
-  $("#kpi-buyingpower").textContent = formatMoney(buyingPowerConverted, ccy);
+  $("#metric-equity").textContent = formatMoney(equityWithLoan, ccy);
+
+  // Key Metrics Grid
+  const cashEl = $("#metric-cash");
+  cashEl.textContent = formatMoney(cashBalance, ccy);
+  cashEl.className = `cell-value font-mono ${pnlClass(cashBalance)}`;
+
+  $("#metric-positions").textContent = formatMoney(grossPositionVal, ccy);
+  $("#metric-avail").textContent = formatMoney(availableFunds, ccy);
+  $("#metric-buyingpower").textContent = formatMoney(buyingPower, ccy);
+  $("#metric-excess-liq").textContent = formatMoney(excessLiq, ccy);
+  $("#metric-init-margin").textContent = formatMoney(initMargin, ccy);
+  $("#metric-maint-margin").textContent = formatMoney(maintMargin, ccy);
 }
 
-function renderAccounts() {
-  const ccy = state.currency;
-  $("#accounts-caption").textContent = `${state.snapshots.length} accounts · ${state.brokers.length} broker(s)`;
-
-  const grid = $("#accounts-grid");
-  grid.innerHTML = state.snapshots
-    .map((s) => {
-      const isSelected = state.selectedAccount === s.account_id;
-      const av = s.account_values;
-      const posCount = s.positions?.length ?? 0;
-      const pnlPct = av.gross_position_value !== 0 ? av.unrealized_pnl / Math.abs(av.gross_position_value) : 0;
-
-      return `
-      <div class="account-card ${isSelected ? "selected" : ""}" data-account="${esc(s.account_id)}">
-        <div class="account-card-header">
-          <div class="account-alias">${esc(s.account_id)}</div>
-          <div class="account-badge">${esc(s.broker_name)}</div>
-        </div>
-        <div class="account-number muted">${esc(s.account_id)} · ${posCount} positions</div>
-        <div class="account-metrics-grid">
-          <div>
-            <div class="metric-label">NET LIQUIDATION VALUE</div>
-            <div class="metric-value font-mono strong">${formatMoney(convertAmount(av.net_liquidation, av.currency, ccy, state.fxRates), ccy)}</div>
-          </div>
-          <div class="text-right">
-            <div class="metric-label">POSITION VALUE</div>
-            <div class="metric-value font-mono">${formatMoney(convertAmount(av.gross_position_value, av.currency, ccy, state.fxRates), ccy)}</div>
-          </div>
-          <div>
-            <div class="metric-label">CASH BALANCE</div>
-            <div class="metric-value font-mono ${pnlClass(av.cash_balance)}">${formatMoney(convertAmount(av.cash_balance, av.currency, ccy, state.fxRates), ccy)}</div>
-          </div>
-          <div class="text-right">
-            <div class="metric-label">UNREALISED P&amp;L</div>
-            <div class="metric-value font-mono ${pnlClass(av.unrealized_pnl)}">
-              ${formatSignedMoney(convertAmount(av.unrealized_pnl, av.currency, ccy, state.fxRates), ccy)}
-              <span class="metric-pct">(${formatPct(pnlPct, { signed: true })})</span>
-            </div>
-          </div>
-        </div>
-      </div>`;
-    })
-    .join("");
-
-  for (const card of grid.querySelectorAll(".account-card")) {
-    card.addEventListener("click", () => {
-      const id = card.dataset.account;
-      state.selectedAccount = state.selectedAccount === id ? "" : id;
-      renderFilterPills();
-      renderAccounts();
-      renderKpis();
-      renderPositions();
-      renderCashBalances();
-    });
-  }
-}
-
-function renderFilterPills() {
-  const pillsContainer = $("#account-filter-pills");
-  let pillsHtml = `
-    <button type="button" class="filter-pill ${state.selectedAccount === "" ? "active" : ""}" data-filter="">
-      All Accounts
-    </button>`;
-
-  pillsHtml += state.snapshots
-    .map(
-      (s) => `
-      <button type="button" class="filter-pill ${state.selectedAccount === s.account_id ? "active" : ""}" data-filter="${esc(s.account_id)}">
-        ${esc(s.broker_name)} (${esc(s.account_id)})
-      </button>`
-    )
-    .join("");
-
-  pillsContainer.innerHTML = pillsHtml;
-
-  for (const btn of pillsContainer.querySelectorAll(".filter-pill")) {
-    btn.addEventListener("click", () => {
-      state.selectedAccount = btn.dataset.filter;
-      renderFilterPills();
-      renderAccounts();
-      renderKpis();
-      renderPositions();
-      renderCashBalances();
-    });
-  }
-}
-
-function renderCashBalances() {
-  const ccy = state.currency;
-  const filteredSnaps = getFilteredSnapshots();
-
-  const allCashItems = filteredSnaps.flatMap((s) =>
-    (s.account_values?.cash_balances ?? []).map((cb) => ({
-      account_id: s.account_id,
-      broker_name: s.broker_name,
-      currency: cb.currency,
-      amount: cb.amount,
-    }))
-  );
-
-  const totalCashConverted = filteredSnaps.reduce(
-    (acc, s) => acc + convertAmount(s.account_values?.cash_balance ?? 0.0, s.account_values?.currency, ccy, state.fxRates),
-    0
-  );
-
-  $("#cash-balances-caption").textContent = `${filteredSnaps.length} ${
-    filteredSnaps.length === 1 ? "account" : "accounts"
-  } · ${formatMoney(totalCashConverted, ccy)} total cash`;
-
-  const tbody = $("#cash-table tbody");
-  tbody.innerHTML = allCashItems.length
-    ? allCashItems
-        .map((c) => {
-          return `
-          <tr>
-            <td>
-              <span class="account-tag">${esc(c.account_id)}</span>
-            </td>
-            <td>
-              <span class="broker-name">${esc(c.broker_name)}</span>
-            </td>
-            <td class="num">
-              <span class="currency-badge">${esc(c.currency)}</span>
-            </td>
-            <td class="num font-mono strong ${pnlClass(c.amount)}">
-              ${formatMoney(c.amount, c.currency)}
-            </td>
-            <td class="num font-mono strong ${pnlClass(c.amount)}">
-              ${formatMoney(convertAmount(c.amount, c.currency, ccy, state.fxRates), ccy)}
-            </td>
-          </tr>`;
-        })
-        .join("")
-    : `<tr><td colspan="5" class="empty muted">No cash balances available.</td></tr>`;
-}
-
+/**
+ * Section 3: Holdings - Positions Table
+ */
 function renderPositions() {
   const ccy = state.currency;
   const q = state.search.trim().toLowerCase();
@@ -437,7 +509,9 @@ function renderPositions() {
     (acc, p) => acc + convertAmount(p.market_value ?? 0, p.currency, ccy, state.fxRates),
     0
   );
-  $("#positions-count").textContent = `${rows.length} positions · ${formatMoney(totalFilteredValue, ccy)}`;
+  $("#positions-count").textContent = `${rows.length} ${
+    rows.length === 1 ? "position" : "positions"
+  } · ${formatMoney(totalFilteredValue, ccy)}`;
 
   for (const th of document.querySelectorAll("#positions-table th[data-sort]")) {
     th.classList.toggle("sorted", th.dataset.sort === key);
@@ -448,11 +522,16 @@ function renderPositions() {
   tbody.innerHTML = rows.length
     ? rows
         .map((p) => {
-          const expiry = p.last_trade_date ? esc(p.last_trade_date) : '<span class="muted">—</span>';
+          const expiry = p.last_trade_date
+            ? esc(p.last_trade_date)
+            : '<span class="muted">—</span>';
           const secType = p.sec_type || "STOCKS";
           const secClass = secType.toLowerCase().replace(/\s+/g, "-");
-          const exchangeBadge = p.exchange ? `<span class="exchange-badge">${esc(p.exchange)}</span>` : '<span class="muted">—</span>';
-          const pnlPct = p.cost_basis !== 0 ? (p.unrealized_pnl ?? 0) / Math.abs(p.cost_basis) : 0;
+          const exchangeBadge = p.exchange
+            ? `<span class="exchange-badge">${esc(p.exchange)}</span>`
+            : '<span class="muted">—</span>';
+          const pnlPct =
+            p.cost_basis !== 0 ? (p.unrealized_pnl ?? 0) / Math.abs(p.cost_basis) : 0;
 
           return `
           <tr>
@@ -487,11 +566,94 @@ function renderPositions() {
     : `<tr><td colspan="12" class="empty muted">No positions match the current account or search filter.</td></tr>`;
 }
 
+/**
+ * Section 3: Holdings - Cash Balances Table
+ */
+function renderCashBalances() {
+  const ccy = state.currency;
+  const filteredSnaps = getFilteredSnapshots();
+
+  const allCashItems = filteredSnaps.flatMap((s) =>
+    (s.account_values?.cash_balances ?? []).map((cb) => ({
+      account_id: s.account_id,
+      broker_name: s.broker_name,
+      currency: cb.currency,
+      amount: cb.amount,
+    }))
+  );
+
+  const totalCashConverted = filteredSnaps.reduce(
+    (acc, s) =>
+      acc +
+      convertAmount(
+        s.account_values?.cash_balance ?? 0.0,
+        s.account_values?.currency,
+        ccy,
+        state.fxRates
+      ),
+    0
+  );
+
+  $("#cash-balances-caption").textContent = `${filteredSnaps.length} ${
+    filteredSnaps.length === 1 ? "account" : "accounts"
+  } · ${formatMoney(totalCashConverted, ccy)} total cash`;
+
+  const tbody = $("#cash-table tbody");
+  tbody.innerHTML = allCashItems.length
+    ? allCashItems
+        .map((c) => {
+          return `
+          <tr>
+            <td>
+              <span class="account-tag">${esc(c.account_id)}</span>
+            </td>
+            <td>
+              <span class="broker-name">${esc(c.broker_name)}</span>
+            </td>
+            <td class="num">
+              <span class="currency-badge">${esc(c.currency)}</span>
+            </td>
+            <td class="num font-mono strong ${pnlClass(c.amount)}">
+              ${formatMoney(c.amount, c.currency)}
+            </td>
+            <td class="num font-mono strong ${pnlClass(c.amount)}">
+              ${formatMoney(convertAmount(c.amount, c.currency, ccy, state.fxRates), ccy)}
+            </td>
+          </tr>`;
+        })
+        .join("")
+    : `<tr><td colspan="5" class="empty muted">No cash balances available.</td></tr>`;
+}
+
 // ---------------------------------------------------------------------------------------
-// Event Wiring
+// Event Wiring & Subpage Navigation
 // ---------------------------------------------------------------------------------------
 
+function setupSidebarNavigation() {
+  const items = $$(".sidebar-item[data-page]");
+  for (const item of items) {
+    item.addEventListener("click", () => {
+      const pageId = item.dataset.page;
+      state.activePage = pageId;
+
+      // Update sidebar active states
+      for (const btn of items) {
+        btn.classList.toggle("active", btn === item);
+      }
+
+      // Switch active subpage
+      for (const subpage of $$(".subpage")) {
+        const isMatch = subpage.id === `page-${pageId}`;
+        subpage.hidden = !isMatch;
+        subpage.classList.toggle("active", isMatch);
+      }
+    });
+  }
+}
+
 function wireEvents() {
+  setupSidebarNavigation();
+
   $("#refresh-btn").addEventListener("click", load);
 
   $("#currency-select").addEventListener("change", async (e) => {

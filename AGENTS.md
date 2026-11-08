@@ -122,13 +122,17 @@ _Last updated: 2026-11-08_
     - Account-wide totals (non-BASE, explicit currency): `available_funds`, `buying_power`, `cash_balance`, `cash_balances` (multi-currency list), `equity_with_loan_value`, `excess_liquidity`, `gross_position_value`, `init_margin_req`, `maint_margin_req`, `net_liquidation`, `unrealized_pnl`.
   - `IBKRService` in `backend/src/uninv_backend/ibkr.py` connects directly to TWS on port 7496 with `readonly=True` (connects in ~0.1s), client ID retry resilience, thread-safe querying via `threading.Lock`, and in-memory contract name/FX caching.
   - All 22 backend tests pass, Ruff check passes, Tauri `cargo check` passes.
-- ✅ Desktop GUI updated with dynamic multi-currency discovery and verified working:
-  - Consumes `/api/v1/snapshot`, `/api/v1/supporting-brokers`, `/api/v1/accounts`, `/api/v1/currencies`, `/api/v1/fx`.
-  - Zero USD assumption: GUI dynamically discovers all distinct source currencies across snapshots (`account_values.currency`, position currencies, and multi-currency cash balances), queries `/api/v1/fx` for all required conversions into the selected currency, and converts all figures.
-  - Full multi-currency dropdown: supports all 11 currencies (`USD`, `HKD`, `EUR`, `GBP`, `JPY`, `CAD`, `AUD`, `CHF`, `CNH`, `SGD`, `NZD`) with automatic backend syncing.
-  - Per-unit prices (`avg_price`, `mark_price`) and raw amounts are formatted with their native currency symbol; portfolio/account aggregate numbers are converted into the intended display currency.
-  - Renders headline KPIs, multi-account pills, precision derivative instrument badges (`FUTURES OPTIONS` styled pill), sortable table, and multi-currency cash balances.
-  - Verified with headless Edge CDP tests connecting to live TWS data (switching USD → JPY → CAD → CHF dynamically pulling FX through graph routing and converting correctly).
+- ✅ Full UI Rework Implemented & Verified:
+  - Global Headbar: perfectly centered logo/brand ("u" icon + `uninv`), with right-aligned UTC `asof` timestamp, multi-currency selector (11 currencies), and Refresh button.
+  - Static Sidebar: 4 primary navigation items (`Portfolio`, `DCA Planning`, `Option Strategies`, `Settings`) with live backend status indicator at the bottom.
+  - Portfolio Page Structured into 3 Core Sections:
+    1. **Accounts**: Top horizontal section displaying account tiles. Default active tile is "All Accounts" (consolidated totals), followed by individual broker account tiles. Clicking a tile highlights it and filters all metrics and holdings down to that account (or back to "All").
+    2. **Metrics Board**: Unified consolidated/account-level financial overview board (no chunky card tiles). Features hero metrics (Net Liquidation Value, Unrealized P&L with % return badge, Equity with Loan Value) and a structured hairline metrics grid (Cash Balance, Gross Position Value, Available Funds, Buying Power, Excess Liquidity, Initial Margin Req, Maint Margin Req) dynamically converted into the chosen display currency.
+    3. **Holdings**: Two dedicated subsections:
+       - **Positions**: Table with symbol, precision instrument name, styled security badges (`STOCKS`, `OPTIONS`, `FUTURES OPTIONS`), exchange, expiry, cost basis, market value, unrealized P&L, search filter box, and interactive column sorting.
+       - **Cash Balances**: Table showing multi-currency cash balances with raw amounts and converted balances.
+  - Subpage Routing: Clicking sidebar navigation switches smoothly between the live `Portfolio` view and styled placeholders for `DCA Planning`, `Option Strategies`, and `Settings`.
+  - Zero USD assumption and live graph-based FX routing fully preserved.
 - ✅ Clean scripts in `scripts/`:
   - `start-all` (`.ps1`, `.cmd`, `.sh`): launches backend + desktop app together with clean shutdown on exit. Uses `/health` verification and `-State Listen` TCP checks to prevent false-positive skips caused by Windows `TIME_WAIT` sockets.
   - `start-backend` (`.ps1`, `.cmd`, `.sh`): launches FastAPI server only with auto-cleanup of unresponsive listeners on port 8000.
