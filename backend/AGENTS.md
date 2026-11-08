@@ -5,10 +5,11 @@ Rules for `backend/`. Root `AGENTS.md` applies too.
 ## Layout
 - `src/uninv_backend/models.py`: Pydantic models with strict `StrEnum`s (`Currency`, `Exchange`, `SecurityType`, `OptionType`). Defines `AccountsResponse`, `BrokerAccountSnapshot`, `AccountValues`, `Position`, `FxMatrixResponse`, `SupportingBroker`.
 - `src/uninv_backend/ibkr.py`: Pure async IBKR connector service (`IBKRService`, `ibkr_service`) wrapping `ib_async` natively on the main asyncio event loop. Connects directly to TWS on port 7496. Provides `get_snapshot`, `get_fx_matrix`, and auto-reconnection with strict network timeouts.
+- `src/uninv_backend/futu.py`: Synchronous Futu OpenD connector service (`FutuService`, `futu_service`) wrapping `futu-api`. Connects to OpenD on port 11111 with fast socket pre-flight probing, daemon thread configuration, and zero-cache live snapshot queries.
 - `src/uninv_backend/api/routes.py`: `/api/v1` routes:
-  - `GET /api/v1/supporting-brokers`
-  - `GET /api/v1/accounts?broker_id=ibkr`: returns `AccountsResponse` with UTC `asof` timestamp.
-  - `GET /api/v1/snapshot?broker_id=ibkr&account_id=U16110728`: returns `BrokerAccountSnapshot` with UTC `asof` timestamp.
+  - `GET /api/v1/supporting-brokers`: returns `[{"id": "ibkr", ...}, {"id": "futu", ...}]`.
+  - `GET /api/v1/accounts?broker_id={ibkr|futu}`: returns `AccountsResponse` with UTC `asof` timestamp.
+  - `GET /api/v1/snapshot?broker_id={ibkr|futu}&account_id={id}`: returns `BrokerAccountSnapshot` with UTC `asof` timestamp.
   - `GET /api/v1/fx`: returns `FxMatrixResponse` with full 11x11 rates matrix, currencies list, and UTC `asof` timestamp.
 - `config.py`: `Settings` (env prefix `UNINV_`).
 - `app.py`: FastAPI app initialization and CORS setup.

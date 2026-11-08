@@ -59,6 +59,8 @@ class Exchange(StrEnum):
     COMEX = "COMEX"
     CBOE = "CBOE"
     SEHK = "SEHK"
+    SSE = "SSE"
+    SZSE = "SZSE"
 
 
 class SecurityType(StrEnum):

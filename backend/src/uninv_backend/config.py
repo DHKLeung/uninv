@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     ibkr_client_id: int = 99
     ibkr_timeout: float = 2.0
 
+    # Futu OpenD connection settings
+    futu_host: str = "127.0.0.1"
+    futu_port: int = 11111
+    futu_timeout: float = 3.0
+
 
 @lru_cache
 def get_settings() -> Settings:

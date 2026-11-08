@@ -311,3 +311,60 @@ We previously introduced a 15-second in-memory cache (`_cached_matrix`) in `FxRo
      - **3.0s timeout** for batch Forex tickers (`ib.reqTickersAsync`).
      - **4.0s timeout** for derivative contract qualifications (`ib.qualifyContractsAsync`).
    - If a specific quote or edge fails to resolve within the timeout window, the system falls back gracefully (e.g., computing synthetic cross-rates or returning unpriced positions) rather than hanging the entire application.
+
+---
+
+## Trial 12: Futu OpenD Integration — The `OpenContextBase` Infinite Loop Trap & Fast Socket Probing
+
+### The Problem
+When evaluating the official `futu-api` Python client library (v10.12.7208) to connect to Futu OpenD (`127.0.0.1:11111`), inspecting `OpenContextBase.__init__` revealed a critical behavioral trap:
+```python
+if is_async_connect:
+    self._wait_reconnect(0)
+else:
+    while True:
+        self._status = ContextStatus.START
+        ret = self._init_connect_sync()
+        if ret == RET_OK:
+            return
+        else:
+            if not self._auto_reconnect:
+                return
+        sleep(self._reconnect_interval) # sleeps 6 seconds and loops forever!
+```
+When `OpenSecTradeContext(host='127.0.0.1', port=11111)` is initialized while Futu OpenD is offline:
+1. `_auto_reconnect` defaults to `True`.
+2. The constructor enters an **infinite `while True:` loop**, sleeping 6 seconds between retries.
+3. The calling thread is **permanently blocked**, repeatedly logging `WSAECONNREFUSED` with no timeout or exit mechanism.
+4. If invoked inside a web server without precautions, this consumes worker threads until the server hangs.
+
+### Additional Challenge: Non-Daemon Background Threads
+By default, `futu-api` creates internal background receiver threads for socket processing. If these threads are non-daemon, the Python process refuses to shut down when Uvicorn receives a termination signal (`SIGINT` / `Ctrl+C`).
+
+### The Solution
+1. **Pre-Flight TCP Socket Probe (`is_opend_available`):**
+   - Before instantiating `OpenSecTradeContext`, `FutuService` executes an instantaneous OS socket probe:
+     ```python
+     def is_opend_available(self, timeout: float = 0.3) -> bool:
+         try:
+             with socket.create_connection((self.host, self.port), timeout=timeout):
+                 return True
+         except OSError:
+             return False
+     ```
+   - If port 11111 is not listening, it immediately aborts in under 0.2 seconds and raises a clean `ConnectionError`:
+     `"Cannot connect to Futu OpenD on 127.0.0.1:11111. Please ensure Futu OpenD is running and logged in."`
+   - FastAPI catches this and returns a clean `503 Service Unavailable` response to the client immediately without blocking.
+2. **Enforce Daemon Threads & Clean Logs:**
+   - Configured globally on service import:
+     ```python
+     futu.SysConfig.set_all_thread_daemon(True)
+     futu.SysConfig.enable_console_log(False)
+     ```
+   - All background threads spawned by Futu exit automatically when the main process terminates.
+3. **Threadpool Offloading (`anyio.to_thread.run_sync`):**
+   - `futu-api`'s synchronous SDK calls are wrapped in `await anyio.to_thread.run_sync(futu_service.get_snapshot, account_id)`.
+   - This executes Futu queries inside FastAPI's external worker threadpool, leaving Uvicorn's main `asyncio` event loop completely free and completely isolated from IBKR's stateful async TCP sockets.
+4. **Normalized Derivatives & Multi-Currency Cash:**
+   - US and HK option ticker codes (e.g. `US.NVDA250117C00145000`) are parsed using regular expressions into uniform `Position` models with normalized expiration dates (`2025-01-17`), strikes (`145.0`), option types (`CALL`), descriptive instrument names (`NVDA Jan17'25 145 CALL`), and standard 100.0 contract multipliers.
+   - Multi-currency balances (`hk_cash`, `us_cash`, `cn_cash`, `jp_cash`, `sg_cash`) are decomposed into typed `CashBalanceItem` lists for multi-currency portfolio aggregation.

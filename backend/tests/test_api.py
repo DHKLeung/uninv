@@ -39,7 +39,10 @@ def test_supporting_brokers_endpoint(client: TestClient) -> None:
     resp = client.get("/api/v1/supporting-brokers")
     assert resp.status_code == 200
     brokers = resp.json()
-    assert brokers == [{"id": "ibkr", "name": "Interactive Brokers"}]
+    assert brokers == [
+        {"id": "ibkr", "name": "Interactive Brokers"},
+        {"id": "futu", "name": "Futubull"},
+    ]
 
 
 def test_accounts_endpoint(client: TestClient) -> None:
@@ -469,3 +472,206 @@ async def test_ibkr_service_async_concurrency() -> None:
     for err in results:
         assert err is not None
         assert "Could not connect to IBKR TWS" in str(err)
+
+
+def test_futu_accounts_endpoint(client: TestClient) -> None:
+    test_dt = datetime(2026, 11, 8, 14, 0, 0, tzinfo=UTC)
+    with patch(
+        "uninv_backend.api.routes.futu_service.get_accounts",
+        return_value=(["28173918"], test_dt),
+    ):
+        resp = client.get("/api/v1/accounts?broker_id=futu")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["broker_id"] == "futu"
+        assert data["accounts"] == ["28173918"]
+        assert "2026-11-08T14:00:00" in data["asof"]
+
+
+def test_futu_accounts_service_unavailable_503(client: TestClient) -> None:
+    with patch(
+        "uninv_backend.api.routes.futu_service.get_accounts",
+        side_effect=ConnectionError("Cannot connect to Futu OpenD on 127.0.0.1:11111"),
+    ):
+        resp = client.get("/api/v1/accounts?broker_id=futu")
+        assert resp.status_code == 503
+        assert "Cannot connect to Futu OpenD" in resp.json()["detail"]
+
+
+def test_futu_snapshot_endpoint(client: TestClient) -> None:
+    test_dt = datetime(2026, 11, 8, 14, 0, 0, tzinfo=UTC)
+    mock_snapshot = BrokerAccountSnapshot(
+        broker_id="futu",
+        account_id="28173918",
+        asof=test_dt,
+        account_values=AccountValues(
+            currency=Currency.HKD,
+            available_funds=150000.0,
+            buying_power=300000.0,
+            cash_balance=100000.0,
+            cash_balances=[
+                CashBalanceItem(currency=Currency.HKD, amount=80000.0),
+                CashBalanceItem(currency=Currency.USD, amount=2500.0),
+            ],
+            equity_with_loan_value=500000.0,
+            excess_liquidity=150000.0,
+            gross_position_value=400000.0,
+            init_margin_req=50000.0,
+            maint_margin_req=30000.0,
+            net_liquidation=500000.0,
+            unrealized_pnl=25000.0,
+        ),
+        positions=[
+            Position(
+                instrument="Tencent Holdings",
+                symbol="00700",
+                position=500.0,
+                avg_price=350.0,
+                mark_price=400.0,
+                cost_basis=175000.0,
+                market_value=200000.0,
+                unrealized_pnl=25000.0,
+                multiplier=1.0,
+                currency=Currency.HKD,
+                exchange=Exchange.SEHK,
+                sec_type=SecurityType.STOCKS,
+            )
+        ],
+    )
+    with patch(
+        "uninv_backend.api.routes.futu_service.get_snapshot",
+        return_value=mock_snapshot,
+    ):
+        resp = client.get("/api/v1/snapshot?broker_id=futu&account_id=28173918")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["broker_id"] == "futu"
+        assert data["account_id"] == "28173918"
+        assert data["account_values"]["net_liquidation"] == 500000.0
+        assert len(data["positions"]) == 1
+        assert data["positions"][0]["symbol"] == "00700"
+
+
+def test_futu_snapshot_service_unavailable_503(client: TestClient) -> None:
+    with patch(
+        "uninv_backend.api.routes.futu_service.get_snapshot",
+        side_effect=ConnectionError("Cannot connect to Futu OpenD"),
+    ):
+        resp = client.get("/api/v1/snapshot?broker_id=futu&account_id=28173918")
+        assert resp.status_code == 503
+        assert "Cannot connect to Futu OpenD" in resp.json()["detail"]
+
+
+def test_futu_service_is_opend_available_offline() -> None:
+    from uninv_backend.futu import FutuService
+
+    service = FutuService(host="127.0.0.1", port=59998)
+    assert service.is_opend_available(timeout=0.1) is False
+
+
+def test_futu_service_parse_account_values() -> None:
+    import pandas as pd
+
+    from uninv_backend.futu import FutuService
+
+    service = FutuService()
+    df = pd.DataFrame(
+        [
+            {
+                "currency": "HKD",
+                "total_assets": 1250000.0,
+                "market_val": 850000.0,
+                "cash": 400000.0,
+                "power": 600000.0,
+                "available_funds": 350000.0,
+                "initial_margin": 120000.0,
+                "maintenance_margin": 80000.0,
+                "unrealized_pl": 45000.0,
+                "hk_cash": 300000.0,
+                "us_cash": 12820.5,
+                "cn_cash": 0.0,
+            }
+        ]
+    )
+    vals = service._parse_account_values(df)
+    assert vals.currency == Currency.HKD
+    assert vals.net_liquidation == 1250000.0
+    assert vals.gross_position_value == 850000.0
+    assert vals.cash_balance == 400000.0
+    assert vals.buying_power == 600000.0
+    assert vals.available_funds == 350000.0
+    assert vals.init_margin_req == 120000.0
+    assert vals.maint_margin_req == 80000.0
+    assert vals.unrealized_pnl == 45000.0
+    assert len(vals.cash_balances) == 2
+    assert vals.cash_balances[0].currency == Currency.HKD
+    assert vals.cash_balances[0].amount == 300000.0
+    assert vals.cash_balances[1].currency == Currency.USD
+    assert vals.cash_balances[1].amount == 12820.5
+
+
+def test_futu_service_parse_positions() -> None:
+    import pandas as pd
+
+    from uninv_backend.futu import FutuService
+
+    service = FutuService()
+    df = pd.DataFrame(
+        [
+            {
+                "code": "HK.00700",
+                "stock_name": "Tencent Holdings",
+                "qty": 300.0,
+                "position_side": "LONG",
+                "cost_price": 380.0,
+                "nominal_price": 420.0,
+                "market_val": 126000.0,
+                "unrealized_pl": 12000.0,
+                "position_market": "HK",
+            },
+            {
+                "code": "US.NVDA250117C00145000",
+                "stock_name": "NVIDIA Option",
+                "qty": 2.0,
+                "position_side": "LONG",
+                "cost_price": 12.5,
+                "nominal_price": 18.0,
+                "market_val": 3600.0,
+                "unrealized_pl": 1100.0,
+                "position_market": "US",
+            },
+        ]
+    )
+    positions = service._parse_positions(df)
+    assert len(positions) == 2
+
+    # Stock
+    p0 = positions[0]
+    assert p0.symbol == "00700"
+    assert p0.instrument == "Tencent Holdings"
+    assert p0.position == 300.0
+    assert p0.avg_price == 380.0
+    assert p0.mark_price == 420.0
+    assert p0.cost_basis == 300.0 * 380.0
+    assert p0.market_value == 126000.0
+    assert p0.unrealized_pnl == 12000.0
+    assert p0.currency == Currency.HKD
+    assert p0.exchange == Exchange.SEHK
+    assert p0.sec_type == SecurityType.STOCKS
+
+    # Option
+    p1 = positions[1]
+    assert p1.symbol == "NVDA250117C00145000"
+    assert p1.instrument == "NVDA Jan17'25 145 CALL"
+    assert p1.position == 2.0
+    assert p1.avg_price == 12.5
+    assert p1.mark_price == 18.0
+    assert p1.cost_basis == 2.0 * 12.5 * 100.0
+    assert p1.market_value == 3600.0
+    assert p1.unrealized_pnl == 1100.0
+    assert p1.currency == Currency.USD
+    assert p1.sec_type == SecurityType.OPTIONS
+    assert p1.option_type == OptionType.CALL
+    assert p1.strike == 145.0
+    assert p1.last_trade_date == "2025-01-17"
+    assert p1.multiplier == 100.0

@@ -146,7 +146,14 @@ _Last updated: 2026-11-08_
 - ✅ Standalone Broker Daemon Architecture:
   - TWS verified and connected via socket API on port 7496.
   - Cross-platform runners and setup guides documented in `gateways/ib_gateway/instruction.md` and `docs/trials_and_errors.md`.
+- ✅ Futubull Integration via `futu-api` (Futu OpenD):
+  - Added official `futu-api` package (v10.12.7208).
+  - Built `backend/src/uninv_backend/futu.py` (`FutuService`, `futu_service`) connecting to Futu OpenD on port 11111 with fast TCP socket pre-flight probing (`is_opend_available`), preventing `futu-api`'s infinite reconnect loop when OpenD is offline.
+  - Daemon thread configuration (`futu.SysConfig.set_all_thread_daemon(True)`) guarantees clean process shutdown.
+  - Non-blocking execution via `anyio.to_thread.run_sync()`, isolating Futu's synchronous SDK in FastAPI's threadpool without blocking Uvicorn's main `asyncio` event loop or IBKR sockets.
+  - Normalizes US and HK stock and option positions, contract multipliers, expiration dates, and multi-currency cash balances (`hk_cash`, `us_cash`, `cn_cash`, `jp_cash`, etc.) into unified `BrokerAccountSnapshot` models.
+  - Tested with 29 comprehensive unit tests across IBKR and Futu; setup guide documented in `gateways/futu_gateway/instruction.md`.
 
 ### Next steps
 1. Future GUI redesign per user specifications.
-2. Futubull integration via `futu-api` (Futu OpenD).
+2. Verify live Futu OpenD connection with user.
