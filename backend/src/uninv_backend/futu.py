@@ -97,7 +97,9 @@ class FutuService:
         self.timeout = timeout or settings.futu_timeout
         self._sec_ctx: futu.OpenSecTradeContext | None = None
         self._crypto_ctx: futu.OpenCryptoTradeContext | None = None
+        self._future_ctx: futu.OpenFutureTradeContext | None = None
         self._crypto_accounts: set[str] = set()
+        self._future_accounts: set[str] = set()
         self._lock = threading.Lock()
 
     def is_opend_available(self, timeout: float = 0.3) -> bool:
@@ -163,8 +165,35 @@ class FutuService:
             self._crypto_ctx = None
             raise ConnectionError(f"Failed to connect to Futu OpenD crypto context: {e}") from e
 
+    def _get_future_context(self) -> futu.OpenFutureTradeContext:
+        """Retrieve or create an active OpenFutureTradeContext."""
+        if not self.is_opend_available():
+            raise ConnectionError(
+                f"Cannot connect to Futu OpenD on {self.host}:{self.port}. "
+                "Please ensure Futu OpenD is running and logged in."
+            )
+
+        if (
+            self._future_ctx is not None
+            and getattr(self._future_ctx, "status", None) == futu.ContextStatus.READY
+        ):
+            return self._future_ctx
+
+        try:
+            if self._future_ctx is not None:
+                with contextlib.suppress(Exception):
+                    self._future_ctx.close()
+            self._future_ctx = futu.OpenFutureTradeContext(
+                host=self.host,
+                port=self.port,
+            )
+            return self._future_ctx
+        except Exception as e:
+            self._future_ctx = None
+            raise ConnectionError(f"Failed to connect to Futu OpenD futures context: {e}") from e
+
     def get_accounts(self) -> tuple[list[str], datetime]:
-        """Fetch list of active account IDs (securities + crypto) from Futu OpenD."""
+        """Fetch list of active account IDs (securities + crypto + futures) from Futu OpenD."""
         with self._lock:
             accounts: list[str] = []
             asof = datetime.now(UTC)
@@ -205,6 +234,28 @@ class FutuService:
             except Exception as e:
                 logger.warning("Futu crypto accounts fetch skipped: %s", e)
 
+            # 3. Fetch futures accounts
+            try:
+                future_ctx = self._get_future_context()
+                ret_f, data_f = future_ctx.get_acc_list()
+                if ret_f == futu.RET_OK and isinstance(data_f, pd.DataFrame) and not data_f.empty:
+                    filtered_f = data_f
+                    if "trd_env" in data_f.columns:
+                        filtered_f = filtered_f[
+                            filtered_f["trd_env"].astype(str).str.upper() == "REAL"
+                        ]
+                    if "acc_status" in filtered_f.columns:
+                        filtered_f = filtered_f[
+                            filtered_f["acc_status"].astype(str).str.upper() == "ACTIVE"
+                        ]
+                    for _, row in filtered_f.iterrows():
+                        acc_id = str(row["acc_id"])
+                        self._future_accounts.add(acc_id)
+                        if acc_id not in accounts:
+                            accounts.append(acc_id)
+            except Exception as e:
+                logger.warning("Futu futures accounts fetch skipped: %s", e)
+
             return accounts, asof
 
     def get_snapshot(self, account_id: str) -> BrokerAccountSnapshot:
@@ -216,8 +267,12 @@ class FutuService:
                 raise ValueError(f"Invalid Futu account ID: {account_id}") from err
 
             # Select context based on account type
-            is_crypto = account_id in self._crypto_accounts
-            ctx = self._get_crypto_context() if is_crypto else self._get_sec_context()
+            if account_id in self._crypto_accounts:
+                ctx = self._get_crypto_context()
+            elif account_id in self._future_accounts:
+                ctx = self._get_future_context()
+            else:
+                ctx = self._get_sec_context()
 
             # 1. Fetch positions with refresh_cache=True (zero-cache live snapshot)
             ret_pos, pos_df = ctx.position_list_query(
@@ -225,20 +280,28 @@ class FutuService:
                 refresh_cache=True,
             )
             if ret_pos != futu.RET_OK:
-                # If first attempt failed and we weren't sure of context, try the other context
-                if not is_crypto:
-                    try:
-                        c_ctx = self._get_crypto_context()
-                        r_p, p_df = c_ctx.position_list_query(
-                            acc_id=acc_id_int, refresh_cache=True
-                        )
-                        if r_p == futu.RET_OK:
-                            self._crypto_accounts.add(account_id)
-                            ctx = c_ctx
-                            pos_df = p_df
-                            ret_pos = r_p
-                    except Exception:
-                        pass
+                # If first attempt failed and context was default, try crypto or future
+                if (
+                    account_id not in self._crypto_accounts
+                    and account_id not in self._future_accounts
+                ):
+                    for c_type, get_ctx_fn in [
+                        (self._crypto_accounts, self._get_crypto_context),
+                        (self._future_accounts, self._get_future_context),
+                    ]:
+                        try:
+                            alt_ctx = get_ctx_fn()
+                            r_p, p_df = alt_ctx.position_list_query(
+                                acc_id=acc_id_int, refresh_cache=True
+                            )
+                            if r_p == futu.RET_OK:
+                                c_type.add(account_id)
+                                ctx = alt_ctx
+                                pos_df = p_df
+                                ret_pos = r_p
+                                break
+                        except Exception:
+                            pass
                 if ret_pos != futu.RET_OK:
                     raise ConnectionError(f"Futu position_list_query failed: {pos_df}")
 
@@ -384,9 +447,7 @@ class FutuService:
             # Determine trading currency
             cur_col = row.get("currency")
             currency = (
-                _map_currency(str(cur_col))
-                if pd.notna(cur_col) and str(cur_col) != "N/A"
-                else None
+                _map_currency(str(cur_col)) if pd.notna(cur_col) and str(cur_col) != "N/A" else None
             )
             if not currency:
                 if market_str == "HK" or code.upper().startswith("HK."):
@@ -396,14 +457,22 @@ class FutuService:
                 else:
                     currency = Currency.USD
 
-            # Check if this position is crypto or option
+            # Check if this position is crypto, futures, or option
             is_crypto = market_str == "CRYPTO" or code.upper().startswith("CC.")
-            opt_match = _OPTION_PATTERN.match(code) if not is_crypto else None
+            is_future = market_str == "FUTURES" or code.upper().startswith("FM.")
+            opt_match = _OPTION_PATTERN.match(code) if (not is_crypto and not is_future) else None
 
             if is_crypto:
                 instrument = stock_name
                 multiplier = 1.0
                 sec_type = SecurityType.CRYPTO
+                strike = None
+                option_type = None
+                last_trade_date = None
+            elif is_future:
+                instrument = stock_name
+                multiplier = 1.0
+                sec_type = SecurityType.FUTURES
                 strike = None
                 option_type = None
                 last_trade_date = None
@@ -462,6 +531,10 @@ class FutuService:
                 with contextlib.suppress(Exception):
                     self._crypto_ctx.close()
                 self._crypto_ctx = None
+            if self._future_ctx is not None:
+                with contextlib.suppress(Exception):
+                    self._future_ctx.close()
+                self._future_ctx = None
 
 
 futu_service = FutuService()
