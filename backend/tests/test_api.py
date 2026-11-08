@@ -1,6 +1,5 @@
-import threading
 from datetime import UTC, datetime
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -47,6 +46,7 @@ def test_accounts_endpoint(client: TestClient) -> None:
     test_dt = datetime(2026, 11, 7, 23, 0, 0, tzinfo=UTC)
     with patch(
         "uninv_backend.api.routes.ibkr_service.get_accounts",
+        new_callable=AsyncMock,
         return_value=(["U16110728"], test_dt),
     ):
         resp = client.get("/api/v1/accounts?broker_id=ibkr")
@@ -66,6 +66,7 @@ def test_accounts_unknown_broker_404(client: TestClient) -> None:
 def test_accounts_service_unavailable_503(client: TestClient) -> None:
     with patch(
         "uninv_backend.api.routes.ibkr_service.get_accounts",
+        new_callable=AsyncMock,
         side_effect=ConnectionError("Could not connect to IBKR gateway"),
     ):
         resp = client.get("/api/v1/accounts?broker_id=ibkr")
@@ -140,6 +141,7 @@ def test_snapshot_endpoint(client: TestClient) -> None:
 
     with patch(
         "uninv_backend.api.routes.ibkr_service.get_snapshot",
+        new_callable=AsyncMock,
         return_value=mock_snapshot,
     ):
         resp = client.get("/api/v1/snapshot?broker_id=ibkr&account_id=U16110728")
@@ -196,6 +198,7 @@ def test_snapshot_unknown_broker_404(client: TestClient) -> None:
 def test_snapshot_unknown_account_404(client: TestClient) -> None:
     with patch(
         "uninv_backend.api.routes.ibkr_service.get_snapshot",
+        new_callable=AsyncMock,
         side_effect=ValueError("Account 'invalid' not found"),
     ):
         resp = client.get("/api/v1/snapshot?broker_id=ibkr&account_id=invalid")
@@ -215,6 +218,7 @@ def test_fx_matrix_endpoint(client: TestClient) -> None:
     )
     with patch(
         "uninv_backend.api.routes.ibkr_service.get_fx_matrix",
+        new_callable=AsyncMock,
         return_value=mock_matrix,
     ):
         resp = client.get("/api/v1/fx")
@@ -294,13 +298,14 @@ def test_normalize_average_price_for_derivatives() -> None:
     assert norm_crypto == 70729.40
 
 
-def test_ibkr_service_connect_failure_raises_connection_error_with_reason() -> None:
+@pytest.mark.anyio
+async def test_ibkr_service_connect_failure_raises_connection_error_with_reason() -> None:
     from uninv_backend.ibkr import IBKRService
 
     # Use a dummy non-existent port to test connection failure immediately
     service = IBKRService(host="127.0.0.1", port=59999, timeout=0.1)
     with pytest.raises(ConnectionError) as exc_info:
-        service._ensure_connected()
+        await service.ensure_connected()
     assert "Could not connect to IBKR TWS on 127.0.0.1:59999" in str(exc_info.value)
     assert "port 59999" in str(exc_info.value)
 
@@ -438,27 +443,25 @@ async def test_fx_router_async_matrix() -> None:
     assert matrix.rates[Currency.USD][Currency.USD] == 1.0
 
 
-def test_ibkr_service_runner_thread_safety() -> None:
+@pytest.mark.anyio
+async def test_ibkr_service_async_concurrency() -> None:
+    import asyncio
+
     from uninv_backend.ibkr import IBKRService
 
     service = IBKRService(host="127.0.0.1", port=59999, timeout=0.1)
 
-    # Calling from multiple concurrent threads must raise ConnectionError cleanly
+    # Calling from multiple concurrent async tasks must raise ConnectionError cleanly
     # without deadlocking or raising event loop errors
-    errors: list[Exception] = []
-
-    def worker() -> None:
+    async def worker() -> Exception | None:
         try:
-            service.get_accounts()
+            await service.get_accounts()
+            return None
         except ConnectionError as e:
-            errors.append(e)
+            return e
 
-    threads = [threading.Thread(target=worker) for _ in range(5)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=2.0)
-
-    assert len(errors) == 5
-    for err in errors:
+    results = await asyncio.gather(*(worker() for _ in range(5)))
+    assert len(results) == 5
+    for err in results:
+        assert err is not None
         assert "Could not connect to IBKR TWS" in str(err)

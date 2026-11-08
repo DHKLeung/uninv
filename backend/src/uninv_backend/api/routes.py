@@ -37,7 +37,7 @@ def get_supporting_brokers() -> list[SupportingBroker]:
     response_model=AccountsResponse,
     summary="List accounts for a broker",
 )
-def get_accounts(
+async def get_accounts(
     broker_id: Annotated[
         str,
         Query(
@@ -51,7 +51,7 @@ def get_accounts(
         raise HTTPException(status_code=404, detail=f"Broker '{broker_id}' not supported")
 
     try:
-        accounts, asof = ibkr_service.get_accounts()
+        accounts, asof = await ibkr_service.get_accounts()
         return AccountsResponse(broker_id=broker_id, asof=asof, accounts=accounts)
     except ConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
@@ -65,7 +65,7 @@ def get_accounts(
     response_model=BrokerAccountSnapshot,
     summary="Get unified broker account snapshot",
 )
-def get_snapshot(
+async def get_snapshot(
     broker_id: Annotated[
         str,
         Query(
@@ -86,7 +86,7 @@ def get_snapshot(
         raise HTTPException(status_code=404, detail=f"Broker '{broker_id}' not supported")
 
     try:
-        return ibkr_service.get_snapshot(account_id)
+        return await ibkr_service.get_snapshot(account_id)
     except ConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except ValueError as e:
@@ -101,10 +101,10 @@ def get_snapshot(
     response_model=FxMatrixResponse,
     summary="Get complete foreign exchange matrix across all currencies",
 )
-def get_fx() -> FxMatrixResponse:
+async def get_fx() -> FxMatrixResponse:
     """Return complete exchange rate matrix between all supported currencies with UTC timestamp."""
     try:
-        return ibkr_service.get_fx_matrix()
+        return await ibkr_service.get_fx_matrix()
     except ConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except Exception as e:

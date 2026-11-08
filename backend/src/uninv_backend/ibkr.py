@@ -5,10 +5,7 @@ import contextlib
 import logging
 import math
 import random
-import threading
-from collections.abc import Coroutine
 from datetime import UTC, datetime
-from typing import Any, TypeVar
 
 from ib_async import IB, Contract, Forex, FuturesOption, Option
 
@@ -136,38 +133,8 @@ def _normalize_average_price(
     return average_cost
 
 
-T = TypeVar("T")
-
-
-class _IBRunner:
-    """Dedicated background worker thread and private asyncio event loop for ib_async."""
-
-    def __init__(self) -> None:
-        self._loop = asyncio.new_event_loop()
-        self._thread = threading.Thread(
-            target=self._run_loop, daemon=True, name="uninv-ibkr-worker"
-        )
-        self._thread.start()
-
-    def _run_loop(self) -> None:
-        asyncio.set_event_loop(self._loop)
-        self._loop.run_forever()
-
-    def run(self, coro: Coroutine[Any, Any, T], timeout: float | None = None) -> T:
-        fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
-        try:
-            return fut.result(timeout=timeout)
-        except TimeoutError as e:
-            fut.cancel()
-            raise TimeoutError(f"IBKR operation timed out after {timeout}s") from e
-
-    def stop(self) -> None:
-        if self._loop.is_running():
-            self._loop.call_soon_threadsafe(self._loop.stop)
-
-
 class IBKRService:
-    """Synchronous, thread-safe service wrapping ib_async via a dedicated event loop worker."""
+    """Async service wrapping ib_async for IBKR queries on the asyncio event loop."""
 
     def __init__(
         self,
@@ -189,29 +156,18 @@ class IBKRService:
         self.timeout = timeout if timeout is not None else settings.ibkr_timeout
         self._contract_name_cache: dict[int, str] = {}
         self._fx_router = FxRouter()
-
-        self._runner = _IBRunner()
-        self._ib: IB = self._runner.run(self._create_ib())
-
-    async def _create_ib(self) -> IB:
-        ib = IB()
-        ib.RequestTimeout = 5.0
-        return ib
+        self._ib = IB()
 
     def is_connected(self) -> bool:
         """Check if currently connected to IBKR."""
         return self._ib.isConnected()
 
-    async def _async_disconnect(self) -> None:
+    async def disconnect(self) -> None:
+        """Disconnect active session."""
         if self._ib.isConnected():
             self._ib.disconnect()
 
-    def disconnect(self) -> None:
-        """Disconnect active session."""
-        with contextlib.suppress(Exception):
-            self._runner.run(self._async_disconnect(), timeout=3.0)
-
-    async def _async_ensure_connected(self) -> None:
+    async def ensure_connected(self) -> None:
         """Connect to TWS on port 7496 if not already connected."""
         if self._ib.isConnected():
             return
@@ -252,22 +208,19 @@ class IBKRService:
             f"enabled on port {self.port}."
         ) from last_error
 
-    def _ensure_connected(self) -> None:
-        """Synchronous wrapper ensuring active connection."""
-        self._runner.run(self._async_ensure_connected(), timeout=self.timeout + 2.0)
+    async def _ensure_connected(self) -> None:
+        """Compatibility alias for ensure_connected."""
+        await self.ensure_connected()
 
-    async def _async_get_accounts(self) -> tuple[list[str], datetime]:
+    async def get_accounts(self) -> tuple[list[str], datetime]:
+        """Return list of managed account IDs with query timestamp."""
         asof = datetime.now(UTC)
-        await self._async_ensure_connected()
+        await self.ensure_connected()
         try:
             return list(self._ib.managedAccounts()), asof
         except Exception as e:
             self._ib.disconnect()
             raise ConnectionError(f"Error communicating with IBKR TWS: {e}") from e
-
-    def get_accounts(self) -> tuple[list[str], datetime]:
-        """Return list of managed account IDs with query timestamp."""
-        return self._runner.run(self._async_get_accounts(), timeout=self.timeout + 2.0)
 
     def _parse_account_values(self, account_id: str) -> AccountValues:
         """Parse account values from in-memory cache."""
@@ -362,8 +315,9 @@ class IBKRService:
             unrealized_pnl=unrealized_pnl,
         )
 
-    async def _async_get_account_values(self, account_id: str) -> AccountValues:
-        await self._async_ensure_connected()
+    async def get_account_values(self, account_id: str) -> AccountValues:
+        """Return key account values and cash balance breakdown."""
+        await self.ensure_connected()
         try:
             return self._parse_account_values(account_id)
         except ValueError:
@@ -372,13 +326,7 @@ class IBKRService:
             self._ib.disconnect()
             raise ConnectionError(f"Error communicating with IBKR TWS: {e}") from e
 
-    def get_account_values(self, account_id: str) -> AccountValues:
-        """Return key account values and cash balance breakdown."""
-        return self._runner.run(
-            self._async_get_account_values(account_id), timeout=self.timeout + 2.0
-        )
-
-    async def _async_build_positions(self, account_id: str) -> list[Position]:
+    async def _build_positions(self, account_id: str) -> list[Position]:
         """Construct positions list querying contract details with strict timeouts."""
         accounts = self._ib.managedAccounts()
         if account_id not in accounts:
@@ -493,26 +441,24 @@ class IBKRService:
 
         return positions
 
-    async def _async_get_positions(self, account_id: str) -> list[Position]:
-        await self._async_ensure_connected()
+    async def get_positions(self, account_id: str) -> list[Position]:
+        """Return standardized holding positions with calculated cost basis and API values."""
+        await self.ensure_connected()
         try:
-            return await self._async_build_positions(account_id)
+            return await self._build_positions(account_id)
         except ValueError:
             raise
         except Exception as e:
             self._ib.disconnect()
             raise ConnectionError(f"Error communicating with IBKR TWS: {e}") from e
 
-    def get_positions(self, account_id: str) -> list[Position]:
-        """Return standardized holding positions with calculated cost basis and API values."""
-        return self._runner.run(self._async_get_positions(account_id), timeout=self.timeout + 5.0)
-
-    async def _async_get_snapshot(self, account_id: str) -> BrokerAccountSnapshot:
+    async def get_snapshot(self, account_id: str) -> BrokerAccountSnapshot:
+        """Return combined account snapshot containing account values and open positions."""
         asof = datetime.now(UTC)
-        await self._async_ensure_connected()
+        await self.ensure_connected()
         try:
             values = self._parse_account_values(account_id)
-            positions = await self._async_build_positions(account_id)
+            positions = await self._build_positions(account_id)
             return BrokerAccountSnapshot(
                 broker_id="ibkr",
                 account_id=account_id,
@@ -526,11 +472,7 @@ class IBKRService:
             self._ib.disconnect()
             raise ConnectionError(f"Error communicating with IBKR TWS: {e}") from e
 
-    def get_snapshot(self, account_id: str) -> BrokerAccountSnapshot:
-        """Return combined account snapshot containing account values and open positions."""
-        return self._runner.run(self._async_get_snapshot(account_id), timeout=self.timeout + 6.0)
-
-    async def _async_fetch_forex_batch(self, pairs: list[str]) -> dict[str, float]:
+    async def _fetch_forex_batch(self, pairs: list[str]) -> dict[str, float]:
         """Fetch quotes for multiple Forex pairs with strict timeouts and resilient fallbacks."""
         results: dict[str, float] = {}
         contracts = [Forex(p) for p in pairs]
@@ -564,18 +506,19 @@ class IBKRService:
             logger.debug("Forex batch probe failed: %s", e)
         return results
 
-    async def _async_get_fx_matrix(self) -> FxMatrixResponse:
-        await self._async_ensure_connected()
-        return await self._fx_router.get_matrix_async(self._async_fetch_forex_batch)
-
-    def get_fx_matrix(self) -> FxMatrixResponse:
+    async def get_fx_matrix(self) -> FxMatrixResponse:
         """Return complete foreign exchange conversion matrix across all currencies."""
-        return self._runner.run(self._async_get_fx_matrix(), timeout=self.timeout + 5.0)
+        await self.ensure_connected()
+        return await self._fx_router.get_matrix_async(self._fetch_forex_batch)
 
-    def get_fx_rate(self, base: Currency, quote: Currency) -> tuple[float, datetime]:
+    async def get_fx_rate(self, base: Currency, quote: Currency) -> tuple[float, datetime]:
         """Return FX rate (1 unit of base = X units of quote) and query timestamp."""
-        matrix = self.get_fx_matrix()
+        matrix = await self.get_fx_matrix()
         return matrix.rates[base][quote], matrix.asof
+
+
+# Global singleton instance
+ibkr_service = IBKRService()
 
 
 # Global singleton instance
