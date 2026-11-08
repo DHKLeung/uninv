@@ -351,7 +351,8 @@ def test_endpoint_returns_503_when_tws_unreachable(client: TestClient) -> None:
         assert "Please ensure TWS is running" in data["detail"]
 
 
-def test_fx_router_get_matrix() -> None:
+@pytest.mark.anyio
+async def test_fx_router_get_matrix() -> None:
     from uninv_backend.fx import FxRouter
 
     market_quotes = {
@@ -361,7 +362,7 @@ def test_fx_router_get_matrix() -> None:
     }
 
     router = FxRouter()
-    matrix = router.get_matrix(
+    matrix = await router.get_matrix(
         lambda pairs: {p: market_quotes[p] for p in pairs if p in market_quotes}
     )
     assert matrix.asof is not None
@@ -371,7 +372,8 @@ def test_fx_router_get_matrix() -> None:
     assert round(matrix.rates[Currency.EUR][Currency.HKD], 2) == round(1.0850 * 7.8413, 2)
 
 
-def test_fx_router_direct_and_inverted() -> None:
+@pytest.mark.anyio
+async def test_fx_router_direct_and_inverted() -> None:
     from uninv_backend.fx import FxRouter
 
     market_quotes = {
@@ -382,7 +384,7 @@ def test_fx_router_direct_and_inverted() -> None:
     router = FxRouter()
 
     # Direct EUR -> USD
-    rate, _ = router.get_rate(
+    rate, _ = await router.get_rate(
         Currency.EUR,
         Currency.USD,
         lambda pairs: {p: market_quotes[p] for p in pairs if p in market_quotes},
@@ -390,7 +392,7 @@ def test_fx_router_direct_and_inverted() -> None:
     assert rate == 1.0850
 
     # Inverted USD -> EUR
-    rate_inv, _ = router.get_rate(
+    rate_inv, _ = await router.get_rate(
         Currency.USD,
         Currency.EUR,
         lambda pairs: {p: market_quotes[p] for p in pairs if p in market_quotes},
@@ -398,7 +400,8 @@ def test_fx_router_direct_and_inverted() -> None:
     assert round(rate_inv, 6) == round(1.0 / 1.0850, 6)
 
 
-def test_fx_router_cross_rate_synthesis() -> None:
+@pytest.mark.anyio
+async def test_fx_router_cross_rate_synthesis() -> None:
     from uninv_backend.fx import FxRouter
 
     # Simulating standard IDEALPRO pairs where CAD -> HKD routes via USD hub
@@ -411,7 +414,7 @@ def test_fx_router_cross_rate_synthesis() -> None:
     }
 
     router = FxRouter()
-    rate, _ = router.get_rate(
+    rate, _ = await router.get_rate(
         Currency.CAD,
         Currency.HKD,
         lambda pairs: {p: market_quotes[p] for p in pairs if p in market_quotes},
@@ -420,12 +423,13 @@ def test_fx_router_cross_rate_synthesis() -> None:
     assert round(rate, 4) == round(expected, 4)
 
 
-def test_fx_router_fallback_on_missing_quote() -> None:
+@pytest.mark.anyio
+async def test_fx_router_fallback_on_missing_quote() -> None:
     from uninv_backend.fx import DEFAULT_USD_RATES, FxRouter
 
     router = FxRouter()
     # Empty market quotes -> uses DEFAULT_USD_RATES fallback
-    rate, _ = router.get_rate(Currency.EUR, Currency.USD, lambda pairs: {})
+    rate, _ = await router.get_rate(Currency.EUR, Currency.USD, lambda pairs: {})
     assert rate == DEFAULT_USD_RATES[Currency.EUR]
 
 
@@ -438,7 +442,7 @@ async def test_fx_router_async_matrix() -> None:
     async def mock_async_probe(pairs: list[str]) -> dict[str, float]:
         return {"EURUSD": 1.10}
 
-    matrix = await router.get_matrix_async(mock_async_probe)
+    matrix = await router.get_matrix(mock_async_probe)
     assert matrix.rates[Currency.EUR][Currency.USD] == 1.10
     assert matrix.rates[Currency.USD][Currency.USD] == 1.0
 

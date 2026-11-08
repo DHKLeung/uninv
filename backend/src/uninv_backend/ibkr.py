@@ -34,6 +34,18 @@ IBKR_SEC_TYPE_MAP: dict[str, SecurityType] = {
     "CASH": SecurityType.CASH,
 }
 
+ACCOUNT_VAL_TAG_MAP: dict[str, str] = {
+    "AvailableFunds": "available_funds",
+    "BuyingPower": "buying_power",
+    "EquityWithLoanValue": "equity_with_loan_value",
+    "ExcessLiquidity": "excess_liquidity",
+    "GrossPositionValue": "gross_position_value",
+    "InitMarginReq": "init_margin_req",
+    "MaintMarginReq": "maint_margin_req",
+    "NetLiquidation": "net_liquidation",
+    "UnrealizedPnL": "unrealized_pnl",
+}
+
 
 def _format_date_str(d_str: str | None) -> str:
     """Format expiration date '20261218' to 'Dec18\'26'."""
@@ -64,12 +76,7 @@ def _format_strike(strike: float | None) -> str:
 
 
 def _format_instrument_name(contract: Contract, fallback_name: str) -> str:
-    """Format standardized instrument name.
-
-    For options and futures options, builds names matching TWS screen:
-    e.g. 'NVDA Jan19\'29 145 CALL' or 'ES FOP(EW3) Dec18\'26 7400 PUT'.
-    For stocks and crypto, uses resolved longName (or fallback symbol).
-    """
+    """Format standardized instrument name for options, futures options, and equities."""
     sec = getattr(contract, "secType", "")
     if sec in ("OPT", "FOP", "FUT"):
         d_fmt = _format_date_str(getattr(contract, "lastTradeDateOrContractMonth", None))
@@ -82,14 +89,11 @@ def _format_instrument_name(contract: Contract, fallback_name: str) -> str:
         if sec == "FOP":
             tc = getattr(contract, "tradingClass", "")
             tag = f"FOP({tc})" if tc else "FOP"
-            parts = [contract.symbol, tag, d_fmt, s_fmt, r_str]
-            return " ".join(p for p in parts if p)
+            return " ".join(p for p in [contract.symbol, tag, d_fmt, s_fmt, r_str] if p)
         elif sec == "OPT":
-            parts = [contract.symbol, d_fmt, s_fmt, r_str]
-            return " ".join(p for p in parts if p)
+            return " ".join(p for p in [contract.symbol, d_fmt, s_fmt, r_str] if p)
         elif sec == "FUT":
-            parts = [contract.symbol, d_fmt]
-            return " ".join(p for p in parts if p)
+            return " ".join(p for p in [contract.symbol, d_fmt] if p)
 
     return fallback_name or contract.symbol
 
@@ -99,30 +103,7 @@ def _normalize_average_price(
     contract: Contract,
     multiplier: float,
 ) -> float:
-    """Normalize raw IBKR average cost to a unit quote price.
-
-    Interactive Brokers API Quirk:
-    - For Stocks, Crypto, and Bonds:
-      `item.averageCost` represents the unit price paid per share/coin.
-      `item.marketPrice` is also quoted per share/coin.
-      Multiplier is 1.0.
-
-    - For Futures Options (`FuturesOption`, `secType='FOP'`)
-      and Equity Options (`Option`, `secType='OPT'`):
-      `item.marketPrice` is quoted in premium points (e.g. 169.46 points for ES options,
-      or $100.74/share for GOOGL options).
-      However, `item.averageCost` in IBKR's socket feed represents the TOTAL CASH COST
-      for 1 full contract (already factoring in multiplier and commissions).
-      For example, for an ES Futures Option with multiplier 50, if an option was traded
-      at 90.97 points, IBKR reports `averageCost = 4548.59` ($4,548.59).
-      If `averageCost` is left unscaled, `average_price` would be in total contract
-      dollars ($4,548.59) while `market_price` is in index points (169.46 points),
-      creating a 50x scale mismatch.
-
-    - Resolution:
-      For `FuturesOption` and `Option`, we divide `averageCost` by `multiplier` so that both
-      `avg_price` and `mark_price` share the exact same unit of quotation (points or $/share).
-    """
+    """Normalize raw IBKR average cost to a unit quote price."""
     is_derivative_option = isinstance(contract, (FuturesOption, Option)) or getattr(
         contract, "secType", ""
     ) in ("OPT", "FOP")
@@ -134,7 +115,7 @@ def _normalize_average_price(
 
 
 class IBKRService:
-    """Async service wrapping ib_async for IBKR queries on the asyncio event loop."""
+    """Native async service wrapping ib_async for IBKR queries on the asyncio event loop."""
 
     def __init__(
         self,
@@ -181,7 +162,6 @@ class IBKRService:
         last_error = None
         for cid in client_ids:
             try:
-                # readonly=True avoids requesting open orders/executions, connecting in ~0.1s
                 await self._ib.connectAsync(
                     self.host,
                     self.port,
@@ -230,24 +210,12 @@ class IBKRService:
 
         vals = self._ib.accountValues(account=account_id)
         default_currency = Currency.USD
-        available_funds = 0.0
-        buying_power = 0.0
         cash_balance = 0.0
-        equity_with_loan_value = 0.0
-        excess_liquidity = 0.0
-        gross_position_value = 0.0
-        init_margin_req = 0.0
-        maint_margin_req = 0.0
-        net_liquidation = 0.0
-        unrealized_pnl = 0.0
+        totals: dict[str, float] = {field: 0.0 for field in ACCOUNT_VAL_TAG_MAP.values()}
         cash_map: dict[Currency, float] = {}
 
         for v in vals:
-            tag = v.tag
-            curr_str = v.currency
-            val_str = v.value
-
-            # Strictly ignore artificial BASE rows
+            tag, curr_str, val_str = v.tag, v.currency, v.value
             if curr_str == "BASE":
                 continue
 
@@ -263,37 +231,11 @@ class IBKRService:
                         f"Unsupported currency '{curr_str}' received in CashBalance"
                     ) from None
 
-            elif tag == "AvailableFunds" and (curr_str == default_currency.value or not curr_str):
-                with contextlib.suppress(ValueError):
-                    available_funds = float(val_str)
-            elif tag == "BuyingPower" and (curr_str == default_currency.value or not curr_str):
-                with contextlib.suppress(ValueError):
-                    buying_power = float(val_str)
-            elif tag == "EquityWithLoanValue" and (
+            elif tag in ACCOUNT_VAL_TAG_MAP and (
                 curr_str == default_currency.value or not curr_str
             ):
                 with contextlib.suppress(ValueError):
-                    equity_with_loan_value = float(val_str)
-            elif tag == "ExcessLiquidity" and (curr_str == default_currency.value or not curr_str):
-                with contextlib.suppress(ValueError):
-                    excess_liquidity = float(val_str)
-            elif tag == "GrossPositionValue" and (
-                curr_str == default_currency.value or not curr_str
-            ):
-                with contextlib.suppress(ValueError):
-                    gross_position_value = float(val_str)
-            elif tag == "InitMarginReq" and (curr_str == default_currency.value or not curr_str):
-                with contextlib.suppress(ValueError):
-                    init_margin_req = float(val_str)
-            elif tag == "MaintMarginReq" and (curr_str == default_currency.value or not curr_str):
-                with contextlib.suppress(ValueError):
-                    maint_margin_req = float(val_str)
-            elif tag == "NetLiquidation" and (curr_str == default_currency.value or not curr_str):
-                with contextlib.suppress(ValueError):
-                    net_liquidation = float(val_str)
-            elif tag == "UnrealizedPnL" and (curr_str == default_currency.value or not curr_str):
-                with contextlib.suppress(ValueError):
-                    unrealized_pnl = float(val_str)
+                    totals[ACCOUNT_VAL_TAG_MAP[tag]] = float(val_str)
 
         cash_balances = [
             CashBalanceItem(currency=c, amount=amt)
@@ -302,17 +244,9 @@ class IBKRService:
 
         return AccountValues(
             currency=default_currency,
-            available_funds=available_funds,
-            buying_power=buying_power,
             cash_balance=cash_balance,
             cash_balances=cash_balances,
-            equity_with_loan_value=equity_with_loan_value,
-            excess_liquidity=excess_liquidity,
-            gross_position_value=gross_position_value,
-            init_margin_req=init_margin_req,
-            maint_margin_req=maint_margin_req,
-            net_liquidation=net_liquidation,
-            unrealized_pnl=unrealized_pnl,
+            **totals,
         )
 
     async def get_account_values(self, account_id: str) -> AccountValues:
@@ -356,10 +290,8 @@ class IBKRService:
                 except Exception:
                     pass
 
-            # Standardized instrument name
             instrument_name = _format_instrument_name(c, long_name)
 
-            # Parse contract multiplier
             mult = 1.0
             if c.multiplier:
                 with contextlib.suppress(ValueError):
@@ -367,16 +299,12 @@ class IBKRService:
             if mult <= 0:
                 mult = 1.0
 
-            # Normalise average unit price
             avg_price = float(_normalize_average_price(item.averageCost, c, mult))
             mark_price = float(item.marketPrice)
-
-            # Cost basis = position * avg_price * multiplier (raw float, no display rounding)
             cost_basis = float(item.position * avg_price * mult)
             market_val = float(item.marketValue)
             unrealized_pnl = float(item.unrealizedPNL)
 
-            # Currency validation (loud fail if unsupported)
             raw_curr = c.currency or "USD"
             try:
                 currency = Currency(raw_curr)
@@ -385,7 +313,6 @@ class IBKRService:
                     f"Unsupported currency '{raw_curr}' on position {c.symbol}"
                 ) from None
 
-            # Exchange validation (loud fail if unsupported)
             raw_ex = c.primaryExchange or c.exchange or None
             exchange = None
             if raw_ex:
@@ -396,7 +323,6 @@ class IBKRService:
                         f"Unsupported exchange '{raw_ex}' on position {c.symbol}"
                     ) from None
 
-            # Security type mapping (loud fail if unsupported)
             raw_sec = c.secType or "STK"
             if raw_sec in IBKR_SEC_TYPE_MAP:
                 sec_type = IBKR_SEC_TYPE_MAP[raw_sec]
@@ -408,7 +334,6 @@ class IBKRService:
                         f"Unsupported security type '{raw_sec}' on position {c.symbol}"
                     ) from None
 
-            # Option type
             raw_right = c.right or None
             option_type = None
             if raw_right in ("C", "CALL"):
@@ -509,16 +434,12 @@ class IBKRService:
     async def get_fx_matrix(self) -> FxMatrixResponse:
         """Return complete foreign exchange conversion matrix across all currencies."""
         await self.ensure_connected()
-        return await self._fx_router.get_matrix_async(self._fetch_forex_batch)
+        return await self._fx_router.get_matrix(self._fetch_forex_batch)
 
     async def get_fx_rate(self, base: Currency, quote: Currency) -> tuple[float, datetime]:
         """Return FX rate (1 unit of base = X units of quote) and query timestamp."""
         matrix = await self.get_fx_matrix()
         return matrix.rates[base][quote], matrix.asof
-
-
-# Global singleton instance
-ibkr_service = IBKRService()
 
 
 # Global singleton instance
