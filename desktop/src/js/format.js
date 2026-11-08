@@ -40,10 +40,10 @@ export function setFxRate(currency, rate) {
 }
 
 /**
- * Convert an amount from fromCurrency to toCurrency using dynamic pair rates or fallbacks.
- * fxRates is an optional map of {"FROM->TO": rate}.
+ * Convert an amount from fromCurrency to toCurrency using the FX matrix or fallbacks.
+ * fxMatrix is the nested map: fxMatrix[from][to] = rate.
  */
-export function convertAmount(amount, fromCurrency, toCurrency, fxRates = {}) {
+export function convertAmount(amount, fromCurrency, toCurrency, fxMatrix = null) {
   if (amount === null || amount === undefined || Number.isNaN(amount)) {
     return 0;
   }
@@ -52,17 +52,25 @@ export function convertAmount(amount, fromCurrency, toCurrency, fxRates = {}) {
   if (from === to) {
     return amount;
   }
-  // 1. Direct pair match in live rates (e.g. "EUR->HKD")
-  const directKey = `${from}->${to}`;
-  if (fxRates && typeof fxRates[directKey] === "number" && fxRates[directKey] > 0) {
-    return amount * fxRates[directKey];
+  // 1. Direct matrix lookup: fxMatrix[from][to]
+  if (
+    fxMatrix &&
+    fxMatrix[from] &&
+    typeof fxMatrix[from][to] === "number" &&
+    fxMatrix[from][to] > 0
+  ) {
+    return amount * fxMatrix[from][to];
   }
-  // 2. Inverted pair match (e.g. 1 / "HKD->EUR")
-  const invKey = `${to}->${from}`;
-  if (fxRates && typeof fxRates[invKey] === "number" && fxRates[invKey] > 0) {
-    return amount / fxRates[invKey];
+  // 2. Inverted matrix lookup: 1 / fxMatrix[to][from]
+  if (
+    fxMatrix &&
+    fxMatrix[to] &&
+    typeof fxMatrix[to][from] === "number" &&
+    fxMatrix[to][from] > 0
+  ) {
+    return amount / fxMatrix[to][from];
   }
-  // 3. Fallback triangulation via USD
+  // 3. Fallback triangulation via USD static table
   const fromRate = FX_RATES[from] ?? 1.0;
   const toRate = FX_RATES[to] ?? 1.0;
   return (amount / fromRate) * toRate;

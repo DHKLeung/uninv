@@ -172,5 +172,15 @@ class FxRate(UninvModel):
     asof: datetime = Field(description="UTC timestamp of the query (ISO 8601)")
 
 
+class FxMatrixResponse(UninvModel):
+    """Matrix of foreign exchange rates across all supported currencies."""
+
+    asof: datetime = Field(description="UTC timestamp of the FX rates snapshot (ISO 8601)")
+    currencies: list[Currency] = Field(description="List of all supported currency codes")
+    rates: dict[Currency, dict[Currency, float]] = Field(
+        description="Conversion matrix: rates[from][to] gives multiplier (1 from = X to)"
+    )
+
+
 # Backwards compatibility alias
 Broker = SupportingBroker

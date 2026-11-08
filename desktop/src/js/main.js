@@ -1,7 +1,16 @@
 /**
  * uninv - Unified Investing Dashboard
  *
- * Consumes unified backend snapshot (/api/v1/snapshot) and live FX rates (/api/v1/fx).
+ * Global Data Pulling:
+ * All broker accounts, unified snapshots, and the complete FX matrix (/api/v1/fx)
+ * are fetched globally on app load or when clicking Refresh.
+ * The data is fixed in memory; currency switching is an instantaneous GUI calculation
+ * using the pre-pulled FX matrix without making any additional network requests.
+ *
+ * Unidirectional Portfolio Interaction:
+ * In the Portfolio page, Section 1 (Accounts horizontal tiles) is the sole selector.
+ * Selecting an account triggers a single unidirectional reaction path:
+ * Section 1 Tiles -> Section 2 Metrics Board -> Section 3 Positions & Cash Balances.
  */
 
 import { apiGet, backendUrl } from "./api.js";
@@ -21,99 +30,65 @@ const $$ = (sel) => document.querySelectorAll(sel);
 
 const state = {
   activePage: "portfolio",
+  // Fixed Global Data Pulled Once
   brokers: [],
+  currencies: [],
   snapshots: [], // list of BrokerAccountSnapshot objects
-  selectedAccount: "", // empty for "All", or account_id string
-  search: "",
-  currency: "USD",
+  fxMatrix: null, // nested map: rates[from][to] = rate
   asof: null,
+
+  // Display / Interaction State
+  selectedAccount: "", // empty for "All", or account_id string
+  currency: "USD",
+  search: "",
   sort: { key: "market_value", dir: -1 },
-  fxRates: {}, // Map of "FROM->TO" to rate float
 };
 
 // ---------------------------------------------------------------------------------------
-// Data Loading & FX Resolution
+// Global Data Loading (Fixed In-Memory Snapshot & FX Matrix)
 // ---------------------------------------------------------------------------------------
 
-/**
- * Scan all snapshots to discover all non-target currencies present in positions,
- * cash balances, and account base values, then query /api/v1/fx for every required pair.
- */
-async function fetchRequiredFxRates(targetCurrency) {
-  const target = (targetCurrency || "USD").toUpperCase();
-  const sourceCurrencies = new Set();
+function syncCurrencyDropdown(currencies) {
+  const select = $("#currency-select");
+  if (!select || !Array.isArray(currencies) || currencies.length === 0) return;
 
-  for (const snap of state.snapshots) {
-    if (snap.account_values?.currency) {
-      sourceCurrencies.add(snap.account_values.currency.toUpperCase());
-    }
-    for (const cb of snap.account_values?.cash_balances ?? []) {
-      if (cb.currency) {
-        sourceCurrencies.add(cb.currency.toUpperCase());
-      }
-    }
-    for (const p of snap.positions ?? []) {
-      if (p.currency) {
-        sourceCurrencies.add(p.currency.toUpperCase());
-      }
+  const existing = new Set(Array.from(select.options).map((o) => o.value));
+  for (const c of currencies) {
+    if (!existing.has(c)) {
+      const opt = document.createElement("option");
+      opt.value = c;
+      const sym = CURRENCY_SYMBOLS[c] ? ` (${CURRENCY_SYMBOLS[c].trim()})` : "";
+      opt.textContent = `${c}${sym}`;
+      select.appendChild(opt);
     }
   }
-
-  const pairsToFetch = [];
-  for (const fromCcy of sourceCurrencies) {
-    if (fromCcy !== target) {
-      const pairKey = `${fromCcy}->${target}`;
-      pairsToFetch.push({ from: fromCcy, to: target, key: pairKey });
-    }
-  }
-
-  if (pairsToFetch.length === 0) {
-    return;
-  }
-
-  await Promise.all(
-    pairsToFetch.map(({ from, to, key }) =>
-      apiGet(`/api/v1/fx?base=${encodeURIComponent(from)}&quote=${encodeURIComponent(to)}`)
-        .then((fx) => {
-          state.fxRates[key] = fx.rate;
-          if (fx.rate > 0) {
-            state.fxRates[`${to}->${from}`] = 1.0 / fx.rate;
-          }
-        })
-        .catch((e) => {
-          console.warn(`Could not refresh live FX rate for ${key}:`, e);
-        })
-    )
-  );
 }
 
+/**
+ * Global data refresh: pulls all broker data, account snapshots, and the full FX matrix.
+ * All operations and page displays throughout the app consume this fixed in-memory data.
+ */
 async function load() {
   const btn = $("#refresh-btn");
   btn.disabled = true;
   btn.textContent = "Loading…";
 
   try {
-    // 0. Sync available currencies from backend
-    apiGet("/api/v1/currencies")
-      .then((ccys) => {
-        const select = $("#currency-select");
-        if (!select || !Array.isArray(ccys)) return;
-        const existing = new Set(Array.from(select.options).map((o) => o.value));
-        for (const c of ccys) {
-          if (!existing.has(c)) {
-            const opt = document.createElement("option");
-            opt.value = c;
-            const sym = CURRENCY_SYMBOLS[c] ? ` (${CURRENCY_SYMBOLS[c].trim()})` : "";
-            opt.textContent = `${c}${sym}`;
-            select.appendChild(opt);
-          }
-        }
-      })
-      .catch(() => {});
+    // 1. Fetch brokers and full FX matrix concurrently
+    const [brokers, fxData] = await Promise.all([
+      apiGet("/api/v1/supporting-brokers"),
+      apiGet("/api/v1/fx"),
+    ]);
 
-    // 1. Fetch supporting brokers
-    const brokers = await apiGet("/api/v1/supporting-brokers");
     state.brokers = brokers;
+    state.currencies = fxData.currencies || [];
+    state.fxMatrix = fxData.rates || {};
+    if (fxData.asof) {
+      state.asof = fxData.asof;
+    }
+
+    // Sync currency dropdown with supported currencies from matrix
+    syncCurrencyDropdown(state.currencies);
 
     // 2. Fetch accounts for each broker
     const brokerMap = Object.fromEntries(brokers.map((b) => [b.id, b.name]));
@@ -122,7 +97,7 @@ async function load() {
     );
     const accountResponses = await Promise.all(accountPromises);
 
-    // 3. Fetch unified snapshots for each account
+    // 3. Fetch snapshots for all managed accounts
     const snapshotPromises = [];
     for (const resp of accountResponses) {
       if (resp.asof) {
@@ -140,12 +115,7 @@ async function load() {
       }
     }
 
-    const snapshots = await Promise.all(snapshotPromises);
-    state.snapshots = snapshots;
-
-    // 4. Dynamically detect ALL currencies across accounts, positions, and cash,
-    //    then ping /api/v1/fx for every conversion needed into the target currency.
-    await fetchRequiredFxRates(state.currency);
+    state.snapshots = await Promise.all(snapshotPromises);
 
     setBackendStatus(true);
     hideError();
@@ -219,9 +189,39 @@ function getAllFilteredPositions() {
   );
 }
 
+// ---------------------------------------------------------------------------------------
+// Section 1: Accounts Horizontal Tiles (Authoritative Selector)
+// ---------------------------------------------------------------------------------------
+
+function updateAccountTilesActiveState() {
+  const listEl = $("#accounts-horizontal-list");
+  if (!listEl) return;
+  for (const tile of listEl.querySelectorAll(".account-tile")) {
+    const acct = tile.dataset.account;
+    tile.classList.toggle("active", acct === state.selectedAccount);
+  }
+}
+
 /**
- * Section 1: Accounts (Horizontal tiles)
+ * Unidirectional reaction path:
+ * Selecting an account updates Section 1 tile highlight, then updates Section 2, then Section 3.
  */
+function onSelectAccount(acctId) {
+  if (state.selectedAccount === acctId && acctId !== "") {
+    state.selectedAccount = "";
+  } else {
+    state.selectedAccount = acctId;
+  }
+
+  // 1. Update Section 1 tiles active state
+  updateAccountTilesActiveState();
+  // 2. Reactively update Section 2 Metrics Board
+  renderMetrics();
+  // 3. Reactively update Section 3 Holdings
+  renderPositions();
+  renderCashBalances();
+}
+
 function renderAccounts() {
   const ccy = state.currency;
   const listEl = $("#accounts-horizontal-list");
@@ -238,7 +238,7 @@ function renderAccounts() {
         s.account_values?.net_liquidation ?? 0,
         s.account_values?.currency,
         ccy,
-        state.fxRates
+        state.fxMatrix
       ),
     0
   );
@@ -261,7 +261,7 @@ function renderAccounts() {
   for (const s of state.snapshots) {
     const isActive = state.selectedAccount === s.account_id;
     const av = s.account_values;
-    const acctNetLiq = convertAmount(av?.net_liquidation ?? 0, av?.currency, ccy, state.fxRates);
+    const acctNetLiq = convertAmount(av?.net_liquidation ?? 0, av?.currency, ccy, state.fxMatrix);
     const posCount = s.positions?.length ?? 0;
 
     html += `
@@ -282,24 +282,15 @@ function renderAccounts() {
 
   for (const tile of listEl.querySelectorAll(".account-tile")) {
     tile.addEventListener("click", () => {
-      const acctId = tile.dataset.account;
-      // Selecting the same account toggles back to All
-      if (state.selectedAccount === acctId && acctId !== "") {
-        state.selectedAccount = "";
-      } else {
-        state.selectedAccount = acctId;
-      }
-      renderAccounts();
-      renderMetrics();
-      renderPositions();
-      renderCashBalances();
+      onSelectAccount(tile.dataset.account);
     });
   }
 }
 
-/**
- * Section 2: Metrics Board (One big cohesive section, not tiles)
- */
+// ---------------------------------------------------------------------------------------
+// Section 2: Metrics Board (Reflects Section 1 Selection)
+// ---------------------------------------------------------------------------------------
+
 function renderMetrics() {
   const ccy = state.currency;
   const filteredSnaps = getFilteredSnapshots();
@@ -316,7 +307,7 @@ function renderMetrics() {
   }
   $("#metrics-currency-name").textContent = ccy;
 
-  // Aggregate values
+  // Aggregate values using pre-pulled FX matrix
   const netLiq = filteredSnaps.reduce(
     (acc, s) =>
       acc +
@@ -324,7 +315,7 @@ function renderMetrics() {
         s.account_values?.net_liquidation ?? 0,
         s.account_values?.currency,
         ccy,
-        state.fxRates
+        state.fxMatrix
       ),
     0
   );
@@ -336,7 +327,7 @@ function renderMetrics() {
         s.account_values?.unrealized_pnl ?? 0,
         s.account_values?.currency,
         ccy,
-        state.fxRates
+        state.fxMatrix
       ),
     0
   );
@@ -348,7 +339,7 @@ function renderMetrics() {
         s.account_values?.equity_with_loan_value ?? 0,
         s.account_values?.currency,
         ccy,
-        state.fxRates
+        state.fxMatrix
       ),
     0
   );
@@ -360,7 +351,7 @@ function renderMetrics() {
         s.account_values?.cash_balance ?? 0,
         s.account_values?.currency,
         ccy,
-        state.fxRates
+        state.fxMatrix
       ),
     0
   );
@@ -372,7 +363,7 @@ function renderMetrics() {
         s.account_values?.gross_position_value ?? 0,
         s.account_values?.currency,
         ccy,
-        state.fxRates
+        state.fxMatrix
       ),
     0
   );
@@ -384,7 +375,7 @@ function renderMetrics() {
         s.account_values?.available_funds ?? 0,
         s.account_values?.currency,
         ccy,
-        state.fxRates
+        state.fxMatrix
       ),
     0
   );
@@ -396,7 +387,7 @@ function renderMetrics() {
         s.account_values?.buying_power ?? 0,
         s.account_values?.currency,
         ccy,
-        state.fxRates
+        state.fxMatrix
       ),
     0
   );
@@ -408,7 +399,7 @@ function renderMetrics() {
         s.account_values?.excess_liquidity ?? 0,
         s.account_values?.currency,
         ccy,
-        state.fxRates
+        state.fxMatrix
       ),
     0
   );
@@ -420,7 +411,7 @@ function renderMetrics() {
         s.account_values?.init_margin_req ?? 0,
         s.account_values?.currency,
         ccy,
-        state.fxRates
+        state.fxMatrix
       ),
     0
   );
@@ -432,7 +423,7 @@ function renderMetrics() {
         s.account_values?.maint_margin_req ?? 0,
         s.account_values?.currency,
         ccy,
-        state.fxRates
+        state.fxMatrix
       ),
     0
   );
@@ -440,7 +431,7 @@ function renderMetrics() {
   // Compute Unrealized PnL %
   const totalPositions = getAllFilteredPositions();
   const totalCostBasisConverted = totalPositions.reduce(
-    (acc, p) => acc + convertAmount(p.cost_basis ?? 0, p.currency, ccy, state.fxRates),
+    (acc, p) => acc + convertAmount(p.cost_basis ?? 0, p.currency, ccy, state.fxMatrix),
     0
   );
   const pnlPct =
@@ -476,9 +467,10 @@ function renderMetrics() {
   $("#metric-maint-margin").textContent = formatMoney(maintMargin, ccy);
 }
 
-/**
- * Section 3: Holdings - Positions Table
- */
+// ---------------------------------------------------------------------------------------
+// Section 3: Holdings (Reflects Section 1 Selection)
+// ---------------------------------------------------------------------------------------
+
 function renderPositions() {
   const ccy = state.currency;
   const q = state.search.trim().toLowerCase();
@@ -506,7 +498,7 @@ function renderPositions() {
   });
 
   const totalFilteredValue = rows.reduce(
-    (acc, p) => acc + convertAmount(p.market_value ?? 0, p.currency, ccy, state.fxRates),
+    (acc, p) => acc + convertAmount(p.market_value ?? 0, p.currency, ccy, state.fxMatrix),
     0
   );
   $("#positions-count").textContent = `${rows.length} ${
@@ -549,13 +541,13 @@ function renderPositions() {
             <td class="num font-mono">${formatQty(p.position)}</td>
             <td class="num font-mono">${formatMoney(p.avg_price, p.currency)}</td>
             <td class="num font-mono">${formatMoney(p.mark_price, p.currency)}</td>
-            <td class="num font-mono">${formatMoney(convertAmount(p.cost_basis, p.currency, ccy, state.fxRates), ccy)}</td>
-            <td class="num font-mono strong">${formatMoney(convertAmount(p.market_value, p.currency, ccy, state.fxRates), ccy)}</td>
+            <td class="num font-mono">${formatMoney(convertAmount(p.cost_basis, p.currency, ccy, state.fxMatrix), ccy)}</td>
+            <td class="num font-mono strong">${formatMoney(convertAmount(p.market_value, p.currency, ccy, state.fxMatrix), ccy)}</td>
             <td class="num"><span class="currency-badge">${esc(p.currency)}</span></td>
             <td class="num font-mono ${pnlClass(p.unrealized_pnl)}">
               ${
                 p.unrealized_pnl != null
-                  ? `<div>${formatSignedMoney(convertAmount(p.unrealized_pnl, p.currency, ccy, state.fxRates), ccy)}</div>
+                  ? `<div>${formatSignedMoney(convertAmount(p.unrealized_pnl, p.currency, ccy, state.fxMatrix), ccy)}</div>
                      <div class="small-pct">${formatPct(pnlPct, { signed: true })}</div>`
                   : '<span class="muted">—</span>'
               }
@@ -566,9 +558,6 @@ function renderPositions() {
     : `<tr><td colspan="12" class="empty muted">No positions match the current account or search filter.</td></tr>`;
 }
 
-/**
- * Section 3: Holdings - Cash Balances Table
- */
 function renderCashBalances() {
   const ccy = state.currency;
   const filteredSnaps = getFilteredSnapshots();
@@ -589,7 +578,7 @@ function renderCashBalances() {
         s.account_values?.cash_balance ?? 0.0,
         s.account_values?.currency,
         ccy,
-        state.fxRates
+        state.fxMatrix
       ),
     0
   );
@@ -617,7 +606,7 @@ function renderCashBalances() {
               ${formatMoney(c.amount, c.currency)}
             </td>
             <td class="num font-mono strong ${pnlClass(c.amount)}">
-              ${formatMoney(convertAmount(c.amount, c.currency, ccy, state.fxRates), ccy)}
+              ${formatMoney(convertAmount(c.amount, c.currency, ccy, state.fxMatrix), ccy)}
             </td>
           </tr>`;
         })
@@ -629,44 +618,58 @@ function renderCashBalances() {
 // Event Wiring & Subpage Navigation
 // ---------------------------------------------------------------------------------------
 
+function switchPage(pageId) {
+  state.activePage = pageId;
+
+  // Update sidebar active states
+  for (const btn of $$(".sidebar-item[data-page]")) {
+    btn.classList.toggle("active", btn.dataset.page === pageId);
+  }
+
+  // Switch active subpage
+  for (const subpage of $$(".subpage")) {
+    const isMatch = subpage.id === `page-${pageId}`;
+    subpage.hidden = !isMatch;
+    subpage.classList.toggle("active", isMatch);
+  }
+}
+
 function setupSidebarNavigation() {
   const items = $$(".sidebar-item[data-page]");
   for (const item of items) {
     item.addEventListener("click", () => {
       const pageId = item.dataset.page;
-      state.activePage = pageId;
-
-      // Update sidebar active states
-      for (const btn of items) {
-        btn.classList.toggle("active", btn === item);
-      }
-
-      // Switch active subpage
-      for (const subpage of $$(".subpage")) {
-        const isMatch = subpage.id === `page-${pageId}`;
-        subpage.hidden = !isMatch;
-        subpage.classList.toggle("active", isMatch);
-      }
+      window.location.hash = pageId;
+      switchPage(pageId);
     });
+  }
+
+  // Support initial hash (e.g. #about, #settings)
+  const initialHash = window.location.hash.replace("#", "").toLowerCase();
+  if (initialHash && $(`#page-${initialHash}`)) {
+    switchPage(initialHash);
   }
 }
 
 function wireEvents() {
   setupSidebarNavigation();
 
+  // Head controls global data refresh
   $("#refresh-btn").addEventListener("click", load);
 
-  $("#currency-select").addEventListener("change", async (e) => {
+  // FX currency selection is purely an instantaneous GUI recalculation
+  $("#currency-select").addEventListener("change", (e) => {
     state.currency = e.target.value;
-    await fetchRequiredFxRates(state.currency);
     render();
   });
 
+  // Search filter
   $("#search").addEventListener("input", (e) => {
     state.search = e.target.value;
     renderPositions();
   });
 
+  // Column sorting
   for (const th of document.querySelectorAll("#positions-table th[data-sort]")) {
     th.addEventListener("click", () => {
       const key = th.dataset.sort;

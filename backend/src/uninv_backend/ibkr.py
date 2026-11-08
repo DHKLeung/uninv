@@ -17,6 +17,7 @@ from uninv_backend.models import (
     CashBalanceItem,
     Currency,
     Exchange,
+    FxMatrixResponse,
     OptionType,
     Position,
     SecurityType,
@@ -473,34 +474,37 @@ class IBKRService:
             positions=positions,
         )
 
-    def _get_direct_forex_rate(self, pair: str) -> float | None:
-        """Fetch live or closing rate for a Forex pair like 'EURUSD'."""
+    def _fetch_forex_batch(self, pairs: list[str]) -> dict[str, float]:
+        """Fetch quotes for multiple Forex pairs in a single batched network request."""
+        results: dict[str, float] = {}
+        contracts = [Forex(p) for p in pairs]
         try:
-            contract = Forex(pair)
-            self._ib.qualifyContracts(contract)
-            tickers = self._ib.reqTickers(contract)
+            self._ib.qualifyContracts(*contracts)
+            tickers = self._ib.reqTickers(*contracts)
             self._ib.sleep(0.4)
-            if tickers:
-                t = tickers[0]
+            for t in tickers:
+                pair_name = f"{t.contract.symbol}{t.contract.currency}"
                 price = t.marketPrice()
-                if not math.isnan(price) and price > 0:
-                    return price
-                if t.close and not math.isnan(t.close) and t.close > 0:
-                    return t.close
-                if t.last and not math.isnan(t.last) and t.last > 0:
-                    return t.last
+                if math.isnan(price) or price <= 0:
+                    price = (
+                        t.close if (t.close and not math.isnan(t.close) and t.close > 0) else None
+                    )
+                if price is not None and not math.isnan(price) and price > 0:
+                    results[pair_name] = price
         except Exception as e:
-            logger.debug("Direct forex probe failed for %s: %s", pair, e)
-        return None
+            logger.debug("Forex batch probe failed: %s", e)
+        return results
+
+    def get_fx_matrix(self) -> FxMatrixResponse:
+        """Return complete foreign exchange conversion matrix across all currencies."""
+        with self._lock:
+            self._ensure_connected()
+            return self._fx_router.get_matrix(self._fetch_forex_batch)
 
     def get_fx_rate(self, base: Currency, quote: Currency) -> tuple[float, datetime]:
         """Return FX rate (1 unit of base = X units of quote) and query timestamp."""
-        if base == quote:
-            return 1.0, datetime.now(UTC)
-
-        with self._lock:
-            self._ensure_connected()
-            return self._fx_router.get_rate(base, quote, self._get_direct_forex_rate)
+        matrix = self.get_fx_matrix()
+        return matrix.rates[base][quote], matrix.asof
 
 
 # Global singleton instance

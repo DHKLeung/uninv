@@ -11,6 +11,7 @@ from uninv_backend.models import (
     CashBalanceItem,
     Currency,
     Exchange,
+    FxMatrixResponse,
     OptionType,
     Position,
     SecurityType,
@@ -201,34 +202,28 @@ def test_snapshot_unknown_account_404(client: TestClient) -> None:
         assert "not found" in resp.json()["detail"]
 
 
-def test_fx_endpoint(client: TestClient) -> None:
+def test_fx_matrix_endpoint(client: TestClient) -> None:
     test_dt = datetime(2026, 11, 7, 23, 0, 0, tzinfo=UTC)
+    mock_matrix = FxMatrixResponse(
+        asof=test_dt,
+        currencies=list(Currency),
+        rates={
+            Currency.USD: {Currency.USD: 1.0, Currency.EUR: 0.92},
+            Currency.EUR: {Currency.USD: 1.08, Currency.EUR: 1.0},
+        },
+    )
     with patch(
-        "uninv_backend.api.routes.ibkr_service.get_fx_rate",
-        return_value=(1.1219, test_dt),
+        "uninv_backend.api.routes.ibkr_service.get_fx_matrix",
+        return_value=mock_matrix,
     ):
-        resp = client.get("/api/v1/fx?base=EUR&quote=USD")
+        resp = client.get("/api/v1/fx")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["base"] == "EUR"
-        assert data["quote"] == "USD"
-        assert data["rate"] == 1.1219
         assert "2026-11-07T23:00:00" in data["asof"]
-
-
-def test_fx_endpoint_same_currency(client: TestClient) -> None:
-    resp = client.get("/api/v1/fx?base=USD&quote=USD")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["base"] == "USD"
-    assert data["quote"] == "USD"
-    assert data["rate"] == 1.0
-    assert "asof" in data
-
-
-def test_fx_endpoint_invalid_currency_422(client: TestClient) -> None:
-    resp = client.get("/api/v1/fx?base=INVALID&quote=USD")
-    assert resp.status_code == 422
+        assert "USD" in data["currencies"]
+        assert len(data["currencies"]) == len(Currency)
+        assert data["rates"]["USD"]["EUR"] == 0.92
+        assert data["rates"]["EUR"]["USD"] == 1.08
 
 
 def test_format_date_iso() -> None:
@@ -350,22 +345,24 @@ def test_endpoint_returns_503_when_tws_unreachable(client: TestClient) -> None:
         assert "Please ensure TWS is running" in data["detail"]
 
 
-def test_currencies_endpoint(client: TestClient) -> None:
-    resp = client.get("/api/v1/currencies")
-    assert resp.status_code == 200
-    currencies = resp.json()
-    assert "USD" in currencies
-    assert "HKD" in currencies
-    assert "EUR" in currencies
-    assert "GBP" in currencies
-    assert "JPY" in currencies
-    assert "CAD" in currencies
-    assert "AUD" in currencies
-    assert "CHF" in currencies
-    assert "CNH" in currencies
-    assert "SGD" in currencies
-    assert "NZD" in currencies
-    assert len(currencies) == len(Currency)
+def test_fx_router_get_matrix() -> None:
+    from uninv_backend.fx import FxRouter
+
+    market_quotes = {
+        "EURUSD": 1.0850,
+        "USDHKD": 7.8413,
+        "USDJPY": 150.00,
+    }
+
+    router = FxRouter()
+    matrix = router.get_matrix(
+        lambda pairs: {p: market_quotes[p] for p in pairs if p in market_quotes}
+    )
+    assert matrix.asof is not None
+    assert len(matrix.currencies) == len(Currency)
+    assert matrix.rates[Currency.EUR][Currency.USD] == 1.0850
+    assert matrix.rates[Currency.USD][Currency.USD] == 1.0
+    assert round(matrix.rates[Currency.EUR][Currency.HKD], 2) == round(1.0850 * 7.8413, 2)
 
 
 def test_fx_router_direct_and_inverted() -> None:
@@ -379,18 +376,26 @@ def test_fx_router_direct_and_inverted() -> None:
     router = FxRouter()
 
     # Direct EUR -> USD
-    rate, _ = router.get_rate(Currency.EUR, Currency.USD, lambda pair: market_quotes.get(pair))
+    rate, _ = router.get_rate(
+        Currency.EUR,
+        Currency.USD,
+        lambda pairs: {p: market_quotes[p] for p in pairs if p in market_quotes},
+    )
     assert rate == 1.0850
 
     # Inverted USD -> EUR
-    rate_inv, _ = router.get_rate(Currency.USD, Currency.EUR, lambda pair: market_quotes.get(pair))
+    rate_inv, _ = router.get_rate(
+        Currency.USD,
+        Currency.EUR,
+        lambda pairs: {p: market_quotes[p] for p in pairs if p in market_quotes},
+    )
     assert round(rate_inv, 6) == round(1.0 / 1.0850, 6)
 
 
-def test_fx_router_multi_hop_path() -> None:
+def test_fx_router_cross_rate_synthesis() -> None:
     from uninv_backend.fx import FxRouter
 
-    # Simulating standard IDEALPRO pairs where CAD -> HKD must route via USD
+    # Simulating standard IDEALPRO pairs where CAD -> HKD routes via USD hub
     # 1 USD = 1.402 CAD => 1 CAD = 1/1.402 USD
     # 1 USD = 7.8413 HKD
     # Expected CAD -> HKD: (1 / 1.402) * 7.8413 = 5.592938...
@@ -400,22 +405,19 @@ def test_fx_router_multi_hop_path() -> None:
     }
 
     router = FxRouter()
-    rate, _ = router.get_rate(Currency.CAD, Currency.HKD, lambda pair: market_quotes.get(pair))
+    rate, _ = router.get_rate(
+        Currency.CAD,
+        Currency.HKD,
+        lambda pairs: {p: market_quotes[p] for p in pairs if p in market_quotes},
+    )
     expected = (1.0 / 1.4020) * 7.8413
     assert round(rate, 4) == round(expected, 4)
 
 
-def test_fx_router_reroutes_on_blocked_or_missing_edge() -> None:
-    from uninv_backend.fx import FxRouter
-
-    # Suppose GBPJPY direct quote is missing/dead, but GBPUSD and USDJPY are live
-    market_quotes = {
-        "GBPUSD": 1.3000,
-        "USDJPY": 150.00,
-    }
+def test_fx_router_fallback_on_missing_quote() -> None:
+    from uninv_backend.fx import DEFAULT_USD_RATES, FxRouter
 
     router = FxRouter()
-    # Direct GBPJPY will return None, so router should block GBPJPY and route via USD
-    rate, _ = router.get_rate(Currency.GBP, Currency.JPY, lambda pair: market_quotes.get(pair))
-    expected = 1.3000 * 150.00
-    assert round(rate, 2) == round(expected, 2)
+    # Empty market quotes -> uses DEFAULT_USD_RATES fallback
+    rate, _ = router.get_rate(Currency.EUR, Currency.USD, lambda pairs: {})
+    assert rate == DEFAULT_USD_RATES[Currency.EUR]

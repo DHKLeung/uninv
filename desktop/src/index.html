@@ -13,10 +13,7 @@
   <body>
     <!-- Global Headbar -->
     <header class="global-headbar">
-      <div class="headbar-left">
-        <!-- Optional workspace tag / subtle breadcrumb -->
-        <span class="workspace-pill">Unified Workspace</span>
-      </div>
+      <div class="headbar-left"></div>
 
       <div class="headbar-center">
         <div class="brand">
@@ -86,6 +83,15 @@
               <circle cx="12" cy="12" r="3"/>
             </svg>
             <span class="sidebar-label">Settings</span>
+          </button>
+
+          <button type="button" class="sidebar-item" data-page="about">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" x2="12" y1="16" y2="12"/>
+              <line x1="12" x2="12.01" y1="8" y2="8"/>
+            </svg>
+            <span class="sidebar-label">About</span>
           </button>
         </nav>
 
@@ -292,6 +298,38 @@
               Broker gateway daemons (IBKR TWS on 7496, Futu OpenD on 11111), system base currency defaults, and display configuration.
             </p>
             <span class="badge-soon">Under Development</span>
+          </div>
+        </div>
+
+        <!-- SUBPAGE 5: About -->
+        <div id="page-about" class="subpage" hidden>
+          <div class="about-card">
+            <div class="about-logo-badge">
+              <span class="logo">u</span>
+            </div>
+            <h2 class="about-title">uninv</h2>
+            <div class="about-tagline"><strong>uni</strong>fied <strong>inv</strong>esting</div>
+            <p class="about-desc">
+              <strong>uninv</strong> (from the first three letters of <strong>uni</strong>fied and the first three letters of <strong>inv</strong>esting) is a privacy-first, local desktop platform that combines multiple broker accounts into a single consolidated view.
+            </p>
+            <div class="about-meta-grid">
+              <div class="about-meta-item">
+                <span class="meta-label">Version</span>
+                <span class="meta-val font-mono">0.1.0</span>
+              </div>
+              <div class="about-meta-item">
+                <span class="meta-label">Security Model</span>
+                <span class="meta-val">100% Local · No Login · No Membership</span>
+              </div>
+              <div class="about-meta-item">
+                <span class="meta-label">Broker Daemons</span>
+                <span class="meta-val">IBKR TWS / Gateway (7496) · Futu OpenD (11111)</span>
+              </div>
+              <div class="about-meta-item">
+                <span class="meta-label">Tech Stack</span>
+                <span class="meta-val">FastAPI + Python 3.13 (Backend) · Tauri 2 (Rust Shell)</span>
+              </div>
+            </div>
           </div>
         </div>
       </main>

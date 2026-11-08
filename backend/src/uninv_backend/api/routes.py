@@ -9,8 +9,7 @@ from uninv_backend.ibkr import ibkr_service
 from uninv_backend.models import (
     AccountsResponse,
     BrokerAccountSnapshot,
-    Currency,
-    FxRate,
+    FxMatrixResponse,
     SupportingBroker,
 )
 
@@ -98,44 +97,16 @@ def get_snapshot(
 
 
 @router.get(
-    "/currencies",
-    response_model=list[str],
-    summary="List available currencies",
-)
-def get_currencies() -> list[str]:
-    """Return all supported currency codes."""
-    return [c.value for c in Currency]
-
-
-@router.get(
     "/fx",
-    response_model=FxRate,
-    summary="Get live foreign exchange rate",
+    response_model=FxMatrixResponse,
+    summary="Get complete foreign exchange matrix across all currencies",
 )
-def get_fx(
-    base: Annotated[
-        Currency,
-        Query(
-            description="Base currency code, e.g. 'EUR'",
-            examples=["EUR"],
-        ),
-    ],
-    quote: Annotated[
-        Currency,
-        Query(
-            description="Quote currency code, e.g. 'USD'",
-            examples=["USD"],
-        ),
-    ],
-) -> FxRate:
-    """Return current exchange rate where 1 unit of base = rate units of quote."""
+def get_fx() -> FxMatrixResponse:
+    """Return complete exchange rate matrix between all supported currencies with UTC timestamp."""
     try:
-        rate, asof = ibkr_service.get_fx_rate(base, quote)
-        return FxRate(base=base, quote=quote, rate=float(rate), asof=asof)
+        return ibkr_service.get_fx_matrix()
     except ConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        logger.exception(f"Error fetching FX rate for {base.value}/{quote.value}")
+        logger.exception("Error constructing FX matrix")
         raise HTTPException(status_code=500, detail=str(e)) from e
