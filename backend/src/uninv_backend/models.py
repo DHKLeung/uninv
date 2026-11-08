@@ -40,6 +40,7 @@ class Currency(StrEnum):
     CHF = "CHF"
     CNH = "CNH"
     SGD = "SGD"
+    NZD = "NZD"
 
 
 class Exchange(StrEnum):

@@ -13,9 +13,10 @@ export const FX_RATES = {
   CHF: 0.88,
   CNH: 7.23,
   SGD: 1.33,
+  NZD: 1.68,
 };
 
-const CURRENCY_SYMBOLS = {
+export const CURRENCY_SYMBOLS = {
   USD: "$",
   HKD: "HK$",
   EUR: "€",
@@ -26,6 +27,7 @@ const CURRENCY_SYMBOLS = {
   CHF: "CHF ",
   CNH: "CN¥",
   SGD: "S$",
+  NZD: "NZ$",
 };
 
 /**

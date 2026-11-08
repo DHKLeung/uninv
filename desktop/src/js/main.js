@@ -6,6 +6,7 @@
 
 import { apiGet, backendUrl } from "./api.js";
 import {
+  CURRENCY_SYMBOLS,
   convertAmount,
   convertCurrency,
   esc,
@@ -92,6 +93,24 @@ async function load() {
   btn.textContent = "Loading…";
 
   try {
+    // 0. Sync available currencies from backend
+    apiGet("/api/v1/currencies")
+      .then((ccys) => {
+        const select = $("#currency-select");
+        if (!select || !Array.isArray(ccys)) return;
+        const existing = new Set(Array.from(select.options).map((o) => o.value));
+        for (const c of ccys) {
+          if (!existing.has(c)) {
+            const opt = document.createElement("option");
+            opt.value = c;
+            const sym = CURRENCY_SYMBOLS[c] ? ` (${CURRENCY_SYMBOLS[c].trim()})` : "";
+            opt.textContent = `${c}${sym}`;
+            select.appendChild(opt);
+          }
+        }
+      })
+      .catch(() => {});
+
     // 1. Fetch supporting brokers
     const brokers = await apiGet("/api/v1/supporting-brokers");
     state.brokers = brokers;

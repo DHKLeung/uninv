@@ -98,6 +98,16 @@ def get_snapshot(
 
 
 @router.get(
+    "/currencies",
+    response_model=list[str],
+    summary="List available currencies",
+)
+def get_currencies() -> list[str]:
+    """Return all supported currency codes."""
+    return [c.value for c in Currency]
+
+
+@router.get(
     "/fx",
     response_model=FxRate,
     summary="Get live foreign exchange rate",

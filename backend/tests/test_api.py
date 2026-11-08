@@ -348,3 +348,74 @@ def test_endpoint_returns_503_when_tws_unreachable(client: TestClient) -> None:
         data = resp.json()
         assert "Could not connect to IBKR TWS on 127.0.0.1:59999" in data["detail"]
         assert "Please ensure TWS is running" in data["detail"]
+
+
+def test_currencies_endpoint(client: TestClient) -> None:
+    resp = client.get("/api/v1/currencies")
+    assert resp.status_code == 200
+    currencies = resp.json()
+    assert "USD" in currencies
+    assert "HKD" in currencies
+    assert "EUR" in currencies
+    assert "GBP" in currencies
+    assert "JPY" in currencies
+    assert "CAD" in currencies
+    assert "AUD" in currencies
+    assert "CHF" in currencies
+    assert "CNH" in currencies
+    assert "SGD" in currencies
+    assert "NZD" in currencies
+    assert len(currencies) == len(Currency)
+
+
+def test_fx_router_direct_and_inverted() -> None:
+    from uninv_backend.fx import FxRouter
+
+    market_quotes = {
+        "EURUSD": 1.0850,
+        "USDHKD": 7.8413,
+    }
+
+    router = FxRouter()
+
+    # Direct EUR -> USD
+    rate, _ = router.get_rate(Currency.EUR, Currency.USD, lambda pair: market_quotes.get(pair))
+    assert rate == 1.0850
+
+    # Inverted USD -> EUR
+    rate_inv, _ = router.get_rate(Currency.USD, Currency.EUR, lambda pair: market_quotes.get(pair))
+    assert round(rate_inv, 6) == round(1.0 / 1.0850, 6)
+
+
+def test_fx_router_multi_hop_path() -> None:
+    from uninv_backend.fx import FxRouter
+
+    # Simulating standard IDEALPRO pairs where CAD -> HKD must route via USD
+    # 1 USD = 1.402 CAD => 1 CAD = 1/1.402 USD
+    # 1 USD = 7.8413 HKD
+    # Expected CAD -> HKD: (1 / 1.402) * 7.8413 = 5.592938...
+    market_quotes = {
+        "USDCAD": 1.4020,
+        "USDHKD": 7.8413,
+    }
+
+    router = FxRouter()
+    rate, _ = router.get_rate(Currency.CAD, Currency.HKD, lambda pair: market_quotes.get(pair))
+    expected = (1.0 / 1.4020) * 7.8413
+    assert round(rate, 4) == round(expected, 4)
+
+
+def test_fx_router_reroutes_on_blocked_or_missing_edge() -> None:
+    from uninv_backend.fx import FxRouter
+
+    # Suppose GBPJPY direct quote is missing/dead, but GBPUSD and USDJPY are live
+    market_quotes = {
+        "GBPUSD": 1.3000,
+        "USDJPY": 150.00,
+    }
+
+    router = FxRouter()
+    # Direct GBPJPY will return None, so router should block GBPJPY and route via USD
+    rate, _ = router.get_rate(Currency.GBP, Currency.JPY, lambda pair: market_quotes.get(pair))
+    expected = 1.3000 * 150.00
+    assert round(rate, 2) == round(expected, 2)

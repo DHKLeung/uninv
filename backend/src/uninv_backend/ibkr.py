@@ -3,13 +3,14 @@
 import contextlib
 import logging
 import math
+import random
 import threading
-import time
 from datetime import UTC, datetime
 
 from ib_async import IB, Contract, Forex, FuturesOption, Option
 
 from uninv_backend.config import get_settings
+from uninv_backend.fx import FxRouter
 from uninv_backend.models import (
     AccountValues,
     BrokerAccountSnapshot,
@@ -155,7 +156,7 @@ class IBKRService:
         self._ib = IB()
         self._lock = threading.Lock()
         self._contract_name_cache: dict[int, str] = {}
-        self._fx_cache: dict[tuple[Currency, Currency], tuple[float, float]] = {}
+        self._fx_router = FxRouter()
 
     def is_connected(self) -> bool:
         """Check if currently connected to IBKR."""
@@ -172,25 +173,41 @@ class IBKRService:
         if self._ib.isConnected():
             return
 
-        try:
-            # readonly=True avoids requesting open orders/executions, connecting in ~0.1s
-            self._ib.connect(
-                self.host,
-                self.port,
-                clientId=self.client_id,
-                readonly=True,
-                timeout=self.timeout,
-            )
-            logger.info("Connected to IBKR TWS on %s:%d", self.host, self.port)
-        except Exception as e:
-            logger.warning("Failed to connect to IBKR TWS on %s:%d: %s", self.host, self.port, e)
-            with contextlib.suppress(Exception):
-                self._ib.disconnect()
-            raise ConnectionError(
-                f"Could not connect to IBKR TWS on {self.host}:{self.port} ({e}). "
-                "Please ensure TWS is running with 'Enable ActiveX and Socket Clients' "
-                f"enabled on port {self.port}."
-            ) from e
+        client_ids = [
+            self.client_id,
+            self.client_id + 1,
+            self.client_id + 2,
+            random.randint(100, 999),
+        ]
+        last_error = None
+        for cid in client_ids:
+            try:
+                # readonly=True avoids requesting open orders/executions, connecting in ~0.1s
+                self._ib.connect(
+                    self.host,
+                    self.port,
+                    clientId=cid,
+                    readonly=True,
+                    timeout=self.timeout,
+                )
+                self.client_id = cid
+                logger.info(
+                    "Connected to IBKR TWS on %s:%d (clientId=%d)", self.host, self.port, cid
+                )
+                return
+            except Exception as e:
+                last_error = e
+                with contextlib.suppress(Exception):
+                    self._ib.disconnect()
+                err_str = str(e).lower()
+                if "actively refused" in err_str or "connection refused" in err_str:
+                    break
+
+        raise ConnectionError(
+            f"Could not connect to IBKR TWS on {self.host}:{self.port} ({last_error}). "
+            "Please ensure TWS is running with 'Enable ActiveX and Socket Clients' "
+            f"enabled on port {self.port}."
+        ) from last_error
 
     def get_accounts(self) -> tuple[list[str], datetime]:
         """Return list of managed account IDs with query timestamp."""
@@ -481,43 +498,9 @@ class IBKRService:
         if base == quote:
             return 1.0, datetime.now(UTC)
 
-        asof = datetime.now(UTC)
         with self._lock:
             self._ensure_connected()
-            cache_key = (base, quote)
-            now = time.time()
-            if cache_key in self._fx_cache:
-                rate, ts = self._fx_cache[cache_key]
-                if now - ts < 15.0:  # 15 seconds TTL
-                    return rate, asof
-
-            # 1. Try direct pair
-            direct_pair = f"{base.value}{quote.value}"
-            rate = self._get_direct_forex_rate(direct_pair)
-            if rate is not None and rate > 0:
-                self._fx_cache[(base, quote)] = (rate, now)
-                self._fx_cache[(quote, base)] = (1.0 / rate, now)
-                return rate, asof
-
-            # 2. Try inverted pair
-            inverted_pair = f"{quote.value}{base.value}"
-            inv_rate = self._get_direct_forex_rate(inverted_pair)
-            if inv_rate is not None and inv_rate > 0:
-                rate = 1.0 / inv_rate
-                self._fx_cache[(base, quote)] = (rate, now)
-                self._fx_cache[(quote, base)] = (inv_rate, now)
-                return rate, asof
-
-            # 3. Triangulate via USD
-            if base != Currency.USD and quote != Currency.USD:
-                rate_base_usd, _ = self.get_fx_rate(base, Currency.USD)
-                rate_usd_quote, _ = self.get_fx_rate(Currency.USD, quote)
-                triangulated = rate_base_usd * rate_usd_quote
-                self._fx_cache[(base, quote)] = (triangulated, now)
-                self._fx_cache[(quote, base)] = (1.0 / triangulated, now)
-                return triangulated, asof
-
-            raise ValueError(f"Could not resolve exchange rate for {base.value}/{quote.value}")
+            return self._fx_router.get_rate(base, quote, self._get_direct_forex_rate)
 
 
 # Global singleton instance
