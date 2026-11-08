@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/v1")
 
 SUPPORTING_BROKERS = [
     SupportingBroker(id="ibkr", name="Interactive Brokers"),
-    SupportingBroker(id="futu", name="Futubull"),
+    SupportingBroker(id="futu", name="Futu"),
 ]
 
 

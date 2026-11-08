@@ -35,12 +35,8 @@ IBKR_SEC_TYPE_MAP: dict[str, SecurityType] = {
 }
 
 ACCOUNT_VAL_TAG_MAP: dict[str, str] = {
-    "AvailableFunds": "available_funds",
-    "BuyingPower": "buying_power",
-    "EquityWithLoanValue": "equity_with_loan_value",
     "ExcessLiquidity": "excess_liquidity",
     "GrossPositionValue": "gross_position_value",
-    "InitMarginReq": "init_margin_req",
     "MaintMarginReq": "maint_margin_req",
     "NetLiquidation": "net_liquidation",
     "UnrealizedPnL": "unrealized_pnl",
@@ -210,7 +206,6 @@ class IBKRService:
 
         vals = self._ib.accountValues(account=account_id)
         default_currency = Currency.USD
-        cash_balance = 0.0
         totals: dict[str, float] = {field: 0.0 for field in ACCOUNT_VAL_TAG_MAP.values()}
         cash_map: dict[Currency, float] = {}
 
@@ -224,8 +219,6 @@ class IBKRService:
                     c_enum = Currency(curr_str)
                     amt = float(val_str)
                     cash_map[c_enum] = amt
-                    if c_enum == default_currency:
-                        cash_balance = amt
                 except ValueError:
                     raise ValueError(
                         f"Unsupported currency '{curr_str}' received in CashBalance"
@@ -240,11 +233,11 @@ class IBKRService:
         cash_balances = [
             CashBalanceItem(currency=c, amount=amt)
             for c, amt in sorted(cash_map.items(), key=lambda x: x[0].value)
+            if abs(amt) > 1e-8
         ]
 
         return AccountValues(
             currency=default_currency,
-            cash_balance=cash_balance,
             cash_balances=cash_balances,
             **totals,
         )

@@ -33,10 +33,14 @@ brokers:
   - `AccountsResponse`: broker ID, UTC `asof` timestamp, and list of account IDs.
   - `BrokerAccountSnapshot`: unified financial overview (`AccountValues`), holdings (`Position` list),
     and UTC `asof` timestamp.
-  - `AccountValues`: account-wide non-BASE financial ledger (cash balances, net liquidation, margin
-    requirements, buying power, unrealized P&L).
+  - `AccountValues`: account-wide non-BASE financial ledger streamlined for "current portfolio status"
+    (net liquidation, gross position value, maintenance margin, excess liquidity, unrealized P&L, and
+    multi-currency cash balances with strict zero-filtering). Redundant or order-entry fields (buying power,
+    available funds, initial margin req, single scalar cash balance) are omitted.
   - `Position`: standardized instrument fields (`instrument`, `symbol`, `avg_price`, `mark_price`,
     `cost_basis`, `market_value`, `unrealized_pnl`, `multiplier`, `sec_type`, `option_type`, `last_trade_date`).
+    Supports nullable fields for aggregate line items (e.g. unbundled Fund Assets / Bond Assets where
+    underlying holdings cannot be individually retrieved from broker daemons).
   - `FxMatrixResponse`: supported currencies list, UTC `asof` timestamp, and full (11x11) rates matrix.
 - **Normalization with `UninvModel`:** Every string is automatically stripped and internal double-spaces
   (e.g., OCC option symbols like `"NVDA  290119C00145000"`) are collapsed to single spaces.
@@ -49,9 +53,14 @@ brokers:
 The backend completely abstracts broker-specific connection protocols, authentication quirks,
 and feed discrepancies into standard RESTful endpoints:
 
-- `GET /api/v1/supporting-brokers`: list of configured brokers.
+- `GET /api/v1/supporting-brokers`: list of configured brokers (`ibkr`, `futu`).
 - `GET /api/v1/accounts?broker_id={id}`: active accounts for the broker.
 - `GET /api/v1/snapshot?broker_id={id}&account_id={id}`: live account snapshot.
+
+**Broker Account Hierarchy & Meta-Broker Architecture:**
+- **Interactive Brokers (IBKR):** IBKR operates with a single unified account container (`U...`) encompassing all security types, currencies, and products.
+- **Futu as a Meta-Broker:** Futu operates as a meta-broker managing multiple independent subsidiaries (`FUTUSECURITIES` for Futubull HK, `FUTUINC` for Moomoo US, `FUTUSG`, `FUTUAU`, etc.) and separate trade contexts (`OpenSecTradeContext`, `OpenFutureTradeContext`, `OpenCryptoTradeContext`). `uninv` normalizes these at the **Universal Account level** (`uni_card_num`). Queries traverse all trade contexts (with `filter_trdmarket=TrdMarket.NONE` for securities) and loop over all `SecurityFirm` enum values to consolidate underlying physical sub-accounts into their parent universal container.
+- **Unbundled Fund & Bond Assets:** When broker daemons like OpenD report aggregate fund/bond wealth values (`fund_assets`, `bond_assets`) without underlying holdings breakdown, `uninv` unbundles them into synthetic position rows (`Fund Assets`, `Bond Assets`) with `market_value` set to the balance, preserving mathematical ledger balance without loss of asset visibility.
 
 **Zero-Cache Guarantee:** Snapshot endpoints never cache broker data in-memory. Every refresh request
 queries the live broker daemon to capture an authentic, 100% real-time snapshot of account values and holdings.

@@ -263,11 +263,15 @@ function renderAccounts() {
     const av = s.account_values;
     const acctNetLiq = convertAmount(av?.net_liquidation ?? 0, av?.currency, ccy, state.fxMatrix);
     const posCount = s.positions?.length ?? 0;
+    const displayName =
+      s.broker_id === "futu" && s.account_id.length > 6
+        ? `...${s.account_id.slice(-4)}`
+        : s.account_id;
 
     html += `
       <div class="account-tile ${isActive ? "active" : ""}" data-account="${esc(s.account_id)}">
         <div class="account-tile-header">
-          <span class="account-tile-name">${esc(s.account_id)}</span>
+          <span class="account-tile-name">${esc(displayName)}</span>
           <span class="account-tile-badge">${esc(s.broker_name)}</span>
         </div>
         <div class="account-tile-body">
@@ -302,7 +306,11 @@ function renderMetrics() {
   } else {
     const snap = state.snapshots.find((s) => s.account_id === state.selectedAccount);
     const brokerName = snap?.broker_name || "Broker";
-    $("#metrics-scope-label").textContent = `ACCOUNT: ${state.selectedAccount}`;
+    const displayId =
+      snap?.broker_id === "futu" && snap?.account_id.length > 6
+        ? `...${snap.account_id.slice(-4)}`
+        : state.selectedAccount;
+    $("#metrics-scope-label").textContent = `ACCOUNT: ${displayId}`;
     $("#metrics-scope-desc").textContent = `${brokerName} account-level margin & balances`;
   }
   $("#metrics-currency-name").textContent = ccy;
@@ -332,30 +340,6 @@ function renderMetrics() {
     0
   );
 
-  const equityWithLoan = filteredSnaps.reduce(
-    (acc, s) =>
-      acc +
-      convertAmount(
-        s.account_values?.equity_with_loan_value ?? 0,
-        s.account_values?.currency,
-        ccy,
-        state.fxMatrix
-      ),
-    0
-  );
-
-  const cashBalance = filteredSnaps.reduce(
-    (acc, s) =>
-      acc +
-      convertAmount(
-        s.account_values?.cash_balance ?? 0,
-        s.account_values?.currency,
-        ccy,
-        state.fxMatrix
-      ),
-    0
-  );
-
   const grossPositionVal = filteredSnaps.reduce(
     (acc, s) =>
       acc +
@@ -368,47 +352,11 @@ function renderMetrics() {
     0
   );
 
-  const availableFunds = filteredSnaps.reduce(
-    (acc, s) =>
-      acc +
-      convertAmount(
-        s.account_values?.available_funds ?? 0,
-        s.account_values?.currency,
-        ccy,
-        state.fxMatrix
-      ),
-    0
-  );
-
-  const buyingPower = filteredSnaps.reduce(
-    (acc, s) =>
-      acc +
-      convertAmount(
-        s.account_values?.buying_power ?? 0,
-        s.account_values?.currency,
-        ccy,
-        state.fxMatrix
-      ),
-    0
-  );
-
   const excessLiq = filteredSnaps.reduce(
     (acc, s) =>
       acc +
       convertAmount(
         s.account_values?.excess_liquidity ?? 0,
-        s.account_values?.currency,
-        ccy,
-        state.fxMatrix
-      ),
-    0
-  );
-
-  const initMargin = filteredSnaps.reduce(
-    (acc, s) =>
-      acc +
-      convertAmount(
-        s.account_values?.init_margin_req ?? 0,
         s.account_values?.currency,
         ccy,
         state.fxMatrix
@@ -431,7 +379,8 @@ function renderMetrics() {
   // Compute Unrealized PnL %
   const totalPositions = getAllFilteredPositions();
   const totalCostBasisConverted = totalPositions.reduce(
-    (acc, p) => acc + convertAmount(p.cost_basis ?? 0, p.currency, ccy, state.fxMatrix),
+    (acc, p) =>
+      acc + (p.cost_basis != null ? convertAmount(p.cost_basis, p.currency, ccy, state.fxMatrix) : 0),
     0
   );
   const pnlPct =
@@ -452,19 +401,10 @@ function renderMetrics() {
   pnlPctEl.textContent = formatPct(pnlPct, { signed: true });
   pnlPctEl.className = `hero-pct-badge ${pnlClass(unrealizedPnl)}`;
 
-  $("#metric-equity").textContent = formatMoney(equityWithLoan, ccy);
-
   // Key Metrics Grid
-  const cashEl = $("#metric-cash");
-  cashEl.textContent = formatMoney(cashBalance, ccy);
-  cashEl.className = `cell-value font-mono ${pnlClass(cashBalance)}`;
-
   $("#metric-positions").textContent = formatMoney(grossPositionVal, ccy);
-  $("#metric-avail").textContent = formatMoney(availableFunds, ccy);
-  $("#metric-buyingpower").textContent = formatMoney(buyingPower, ccy);
-  $("#metric-excess-liq").textContent = formatMoney(excessLiq, ccy);
-  $("#metric-init-margin").textContent = formatMoney(initMargin, ccy);
   $("#metric-maint-margin").textContent = formatMoney(maintMargin, ccy);
+  $("#metric-excess-liq").textContent = formatMoney(excessLiq, ccy);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -522,35 +462,40 @@ function renderPositions() {
           const exchangeBadge = p.exchange
             ? `<span class="exchange-badge">${esc(p.exchange)}</span>`
             : '<span class="muted">—</span>';
-          const pnlPct =
-            p.cost_basis !== 0 ? (p.unrealized_pnl ?? 0) / Math.abs(p.cost_basis) : 0;
+          const symbolHtml = p.symbol
+            ? `<span class="symbol-code">${esc(p.symbol)}</span>`
+            : '<span class="muted">—</span>';
+          const avgPriceHtml =
+            p.avg_price != null ? formatMoney(p.avg_price, p.currency) : '<span class="muted">—</span>';
+          const costBasisHtml =
+            p.cost_basis != null
+              ? formatMoney(convertAmount(p.cost_basis, p.currency, ccy, state.fxMatrix), ccy)
+              : '<span class="muted">—</span>';
+          const pnlHtml =
+            p.cost_basis != null && p.unrealized_pnl != null
+              ? `<div>${formatSignedMoney(convertAmount(p.unrealized_pnl, p.currency, ccy, state.fxMatrix), ccy)}</div>
+                 <div class="small-pct">${formatPct(p.cost_basis !== 0 ? p.unrealized_pnl / Math.abs(p.cost_basis) : 0, { signed: true })}</div>`
+              : '<span class="muted">—</span>';
 
           return `
           <tr>
             <td>
               <div class="instrument-name">${esc(p.instrument)}</div>
             </td>
-            <td>
-              <span class="symbol-code">${esc(p.symbol)}</span>
-            </td>
+            <td>${symbolHtml}</td>
             <td>
               <span class="sec-badge ${esc(secClass)}">${esc(secType)}</span>
             </td>
             <td>${exchangeBadge}</td>
             <td>${expiry}</td>
             <td class="num font-mono">${formatQty(p.position)}</td>
-            <td class="num font-mono">${formatMoney(p.avg_price, p.currency)}</td>
+            <td class="num font-mono">${avgPriceHtml}</td>
             <td class="num font-mono">${formatMoney(p.mark_price, p.currency)}</td>
-            <td class="num font-mono">${formatMoney(convertAmount(p.cost_basis, p.currency, ccy, state.fxMatrix), ccy)}</td>
+            <td class="num font-mono">${costBasisHtml}</td>
             <td class="num font-mono strong">${formatMoney(convertAmount(p.market_value, p.currency, ccy, state.fxMatrix), ccy)}</td>
             <td class="num"><span class="currency-badge">${esc(p.currency)}</span></td>
-            <td class="num font-mono ${pnlClass(p.unrealized_pnl)}">
-              ${
-                p.unrealized_pnl != null
-                  ? `<div>${formatSignedMoney(convertAmount(p.unrealized_pnl, p.currency, ccy, state.fxMatrix), ccy)}</div>
-                     <div class="small-pct">${formatPct(pnlPct, { signed: true })}</div>`
-                  : '<span class="muted">—</span>'
-              }
+            <td class="num font-mono ${p.cost_basis != null ? pnlClass(p.unrealized_pnl) : ""}">
+              ${pnlHtml}
             </td>
           </tr>`;
         })
@@ -571,15 +516,8 @@ function renderCashBalances() {
     }))
   );
 
-  const totalCashConverted = filteredSnaps.reduce(
-    (acc, s) =>
-      acc +
-      convertAmount(
-        s.account_values?.cash_balance ?? 0.0,
-        s.account_values?.currency,
-        ccy,
-        state.fxMatrix
-      ),
+  const totalCashConverted = allCashItems.reduce(
+    (acc, c) => acc + convertAmount(c.amount, c.currency, ccy, state.fxMatrix),
     0
   );
 
@@ -591,10 +529,14 @@ function renderCashBalances() {
   tbody.innerHTML = allCashItems.length
     ? allCashItems
         .map((c) => {
+          const displayAcct =
+            c.broker_name === "Futu" && c.account_id.length > 6
+              ? `...${c.account_id.slice(-4)}`
+              : c.account_id;
           return `
           <tr>
             <td>
-              <span class="account-tag">${esc(c.account_id)}</span>
+              <span class="account-tag">${esc(displayAcct)}</span>
             </td>
             <td>
               <span class="broker-name">${esc(c.broker_name)}</span>

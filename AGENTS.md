@@ -157,5 +157,21 @@ _Last updated: 2026-11-08_
   - Verified live connection against Futu OpenD: successfully pulls real margin accounts (`TSM`, `SPYM`, `QQQM`, `ASML`) and crypto accounts (`BTC`).
   - Tested with 29 comprehensive unit tests across IBKR and Futu; setup guide documented in `gateways/futu_gateway/instruction.md`.
 
-### Next steps
-1. Future GUI redesign per user specifications.
+- ✅ Streamlined Portfolio Snapshot & Futu Meta-Broker Architecture:
+  - Redefined `AccountValues` to focus purely on "current portfolio status", dropping order-entry fields:
+    - Kept: `currency` (base USD), `net_liquidation`, `gross_position_value`, `maint_margin_req`, `excess_liquidity`, `unrealized_pnl`, `cash_balances` (multi-currency list).
+    - Dropped: `available_funds`, `buying_power`, `init_margin_req`, `cash_balance` (single scalar), `equity_with_loan_value`.
+    - Strict zero filtering on cash balances: preserves fractional dust (`abs(amt) > 1e-8`), ignores true zero balances.
+  - Futu as a Meta-Broker:
+    - Broker name standardized to `Futu` (supporting-brokers endpoint returns `[{"id": "ibkr", "name": "Interactive Brokers"}, {"id": "futu", "name": "Futu"}]`).
+    - Operates at the **Universal Account level** (`uni_card_num`), e.g. `...7283`, `...0281`, `...3055`, `...9836`.
+    - Traverses all 3 contexts: `OpenSecTradeContext(filter_trdmarket=TrdMarket.NONE)` (disabling silent HK filtering), `OpenFutureTradeContext`, `OpenCryptoTradeContext`.
+    - Automatically loops over all `SecurityFirm` enum values (`FUTUSECURITIES`, `FUTUINC`, `FUTUSG`, `FUTUAU`, `FUTUCA`, `FUTUJP`, `FUTUMY`) to ingest both Futubull HK and Moomoo US accounts in ~110ms total.
+    - Preserves broker's native instrument name and symbol (e.g. `US.TSM`, `CC.BTC`) without forced symbol stripping.
+    - Sets `exchange = None` for crypto when not tied to a stock exchange.
+    - Snapshot queries fetch account values with `currency="USD"`, delegating all presentation conversions to `uninv`'s FX matrix and GUI.
+  - Desktop GUI Alignment:
+    - Metrics Board streamlined to Hero metrics (`Net Liquidation Value`, `Unrealized P&L` + badge) and key grid (`Gross Position Value`, `Maint Margin Req`, `Excess Liquidity`).
+    - Account horizontal tiles display clean formatted IDs (e.g. `...0281`, `...7283`, `...3055`).
+    - In "All Accounts", positions are displayed additively without forced symbol merging; cash balances are summed across all non-zero currency holdings.
+  - 29/29 tests pass, Ruff check passes, Tauri `cargo check` passes, live verified with screenshot.

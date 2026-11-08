@@ -72,6 +72,8 @@ class SecurityType(StrEnum):
     FUTURES_OPTIONS = "FUTURES OPTIONS"
     CRYPTO = "CRYPTO"
     CASH = "CASH"
+    FUNDS = "FUNDS"
+    BONDS = "BONDS"
 
 
 class OptionType(StrEnum):
@@ -107,20 +109,17 @@ class AccountValues(UninvModel):
     """Key raw account margins and cash balances (all non-BASE, explicit currency)."""
 
     currency: Currency = Field(description="Account base currency, e.g. Currency.USD")
-    available_funds: float = Field(description="Available funds for trading")
-    buying_power: float = Field(description="Total buying power")
-    cash_balance: float = Field(description="Total cash balance in account base currency")
+    net_liquidation: float = Field(description="Net liquidation value / Total assets")
+    gross_position_value: float = Field(description="Gross position value")
+    maint_margin_req: float = Field(description="Maintenance margin requirement")
+    excess_liquidity: float = Field(
+        description="Excess liquidity cushion (net_liquidation - maint_margin_req)"
+    )
+    unrealized_pnl: float = Field(description="Total account unrealized P&L")
     cash_balances: list[CashBalanceItem] = Field(
         default_factory=list,
         description="Cash balance breakdown by individual non-BASE currency",
     )
-    equity_with_loan_value: float = Field(description="Equity with loan value")
-    excess_liquidity: float = Field(description="Excess liquidity")
-    gross_position_value: float = Field(description="Gross position value")
-    init_margin_req: float = Field(description="Initial margin requirement")
-    maint_margin_req: float = Field(description="Maintenance margin requirement")
-    net_liquidation: float = Field(description="Net liquidation value")
-    unrealized_pnl: float = Field(description="Total account unrealized P&L")
 
 
 class Position(UninvModel):
@@ -131,18 +130,22 @@ class Position(UninvModel):
     """
 
     instrument: str = Field(
-        description="Descriptive instrument name (e.g. 'NVDA Jan19'29 145 CALL')"
+        description="Descriptive instrument name (e.g. 'NVDA Jan19\'29 145 CALL', 'Fund Assets')"
     )
-    symbol: str = Field(description="Contract local symbol, e.g. 'BOXX', 'NVDA 290119C00145000'")
+    symbol: str | None = Field(
+        default=None, description="Contract local symbol, e.g. 'BOXX', 'NVDA 290119C00145000'"
+    )
     position: float = Field(description="Quantity held (positive for long, negative for short)")
-    avg_price: float = Field(description="Unit entry price / normalized average cost (raw float)")
+    avg_price: float | None = Field(
+        default=None, description="Unit entry price / normalized average cost (raw float)"
+    )
     mark_price: float = Field(description="Current unit market price (raw float)")
-    cost_basis: float = Field(
-        description="Total cost basis = position * avg_price * multiplier (raw float)"
+    cost_basis: float | None = Field(
+        default=None, description="Total cost basis = position * avg_price * multiplier (raw float)"
     )
     market_value: float = Field(description="Market value from broker portfolio feed (raw float)")
     unrealized_pnl: float = Field(
-        description="Unrealized P&L from broker portfolio feed (raw float)"
+        default=0.0, description="Unrealized P&L from broker portfolio feed (raw float)"
     )
     multiplier: float = Field(default=1.0, description="Contract multiplier")
     currency: Currency = Field(description="Trading currency")

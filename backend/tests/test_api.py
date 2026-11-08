@@ -41,7 +41,7 @@ def test_supporting_brokers_endpoint(client: TestClient) -> None:
     brokers = resp.json()
     assert brokers == [
         {"id": "ibkr", "name": "Interactive Brokers"},
-        {"id": "futu", "name": "Futubull"},
+        {"id": "futu", "name": "Futu"},
     ]
 
 
@@ -81,17 +81,12 @@ def test_snapshot_endpoint(client: TestClient) -> None:
     test_dt = datetime(2026, 11, 7, 23, 0, 0, tzinfo=UTC)
     mock_values = AccountValues(
         currency=Currency.USD,
-        available_funds=42138.60,
-        buying_power=280923.98,
-        cash_balance=-6612.62,
         cash_balances=[
             CashBalanceItem(currency=Currency.USD, amount=-6612.62),
             CashBalanceItem(currency=Currency.HKD, amount=12500.00),
         ],
-        equity_with_loan_value=99883.58,
         excess_liquidity=48390.88,
         gross_position_value=123573.20,
-        init_margin_req=57744.98,
         maint_margin_req=51623.57,
         net_liquidation=100014.45,
         unrealized_pnl=-2783.42,
@@ -157,11 +152,10 @@ def test_snapshot_endpoint(client: TestClient) -> None:
         # Check account values
         av = data["account_values"]
         assert av["currency"] == "USD"
-        assert av["available_funds"] == 42138.60
-        assert av["buying_power"] == 280923.98
-        assert av["cash_balance"] == -6612.62
         assert av["net_liquidation"] == 100014.45
         assert av["unrealized_pnl"] == -2783.42
+        assert av["excess_liquidity"] == 48390.88
+        assert av["maint_margin_req"] == 51623.57
         assert len(av["cash_balances"]) == 2
 
         # Check positions
@@ -502,29 +496,24 @@ def test_futu_snapshot_endpoint(client: TestClient) -> None:
     test_dt = datetime(2026, 11, 8, 14, 0, 0, tzinfo=UTC)
     mock_snapshot = BrokerAccountSnapshot(
         broker_id="futu",
-        account_id="28173918",
+        account_id="1001272756530281",
         asof=test_dt,
         account_values=AccountValues(
-            currency=Currency.HKD,
-            available_funds=150000.0,
-            buying_power=300000.0,
-            cash_balance=100000.0,
+            currency=Currency.USD,
+            net_liquidation=500000.0,
+            gross_position_value=400000.0,
+            maint_margin_req=30000.0,
+            excess_liquidity=470000.0,
+            unrealized_pnl=25000.0,
             cash_balances=[
                 CashBalanceItem(currency=Currency.HKD, amount=80000.0),
                 CashBalanceItem(currency=Currency.USD, amount=2500.0),
             ],
-            equity_with_loan_value=500000.0,
-            excess_liquidity=150000.0,
-            gross_position_value=400000.0,
-            init_margin_req=50000.0,
-            maint_margin_req=30000.0,
-            net_liquidation=500000.0,
-            unrealized_pnl=25000.0,
         ),
         positions=[
             Position(
                 instrument="Tencent Holdings",
-                symbol="00700",
+                symbol="HK.00700",
                 position=500.0,
                 avg_price=350.0,
                 mark_price=400.0,
@@ -542,14 +531,15 @@ def test_futu_snapshot_endpoint(client: TestClient) -> None:
         "uninv_backend.api.routes.futu_service.get_snapshot",
         return_value=mock_snapshot,
     ):
-        resp = client.get("/api/v1/snapshot?broker_id=futu&account_id=28173918")
+        resp = client.get("/api/v1/snapshot?broker_id=futu&account_id=1001272756530281")
         assert resp.status_code == 200
         data = resp.json()
         assert data["broker_id"] == "futu"
-        assert data["account_id"] == "28173918"
+        assert data["account_id"] == "1001272756530281"
         assert data["account_values"]["net_liquidation"] == 500000.0
+        assert data["account_values"]["excess_liquidity"] == 470000.0
         assert len(data["positions"]) == 1
-        assert data["positions"][0]["symbol"] == "00700"
+        assert data["positions"][0]["symbol"] == "HK.00700"
 
 
 def test_futu_snapshot_service_unavailable_503(client: TestClient) -> None:
@@ -557,7 +547,7 @@ def test_futu_snapshot_service_unavailable_503(client: TestClient) -> None:
         "uninv_backend.api.routes.futu_service.get_snapshot",
         side_effect=ConnectionError("Cannot connect to Futu OpenD"),
     ):
-        resp = client.get("/api/v1/snapshot?broker_id=futu&account_id=28173918")
+        resp = client.get("/api/v1/snapshot?broker_id=futu&account_id=1001272756530281")
         assert resp.status_code == 503
         assert "Cannot connect to Futu OpenD" in resp.json()["detail"]
 
@@ -569,45 +559,12 @@ def test_futu_service_is_opend_available_offline() -> None:
     assert service.is_opend_available(timeout=0.1) is False
 
 
-def test_futu_service_parse_account_values() -> None:
-    import pandas as pd
+def test_futu_service_all_security_firms() -> None:
+    from uninv_backend.futu import ALL_SECURITY_FIRMS
 
-    from uninv_backend.futu import FutuService
-
-    service = FutuService()
-    df = pd.DataFrame(
-        [
-            {
-                "currency": "HKD",
-                "total_assets": 1250000.0,
-                "market_val": 850000.0,
-                "cash": 400000.0,
-                "power": 600000.0,
-                "available_funds": 350000.0,
-                "initial_margin": 120000.0,
-                "maintenance_margin": 80000.0,
-                "unrealized_pl": 45000.0,
-                "hk_cash": 300000.0,
-                "us_cash": 12820.5,
-                "cn_cash": 0.0,
-            }
-        ]
-    )
-    vals = service._parse_account_values(df)
-    assert vals.currency == Currency.HKD
-    assert vals.net_liquidation == 1250000.0
-    assert vals.gross_position_value == 850000.0
-    assert vals.cash_balance == 400000.0
-    assert vals.buying_power == 600000.0
-    assert vals.available_funds == 350000.0
-    assert vals.init_margin_req == 120000.0
-    assert vals.maint_margin_req == 80000.0
-    assert vals.unrealized_pnl == 45000.0
-    assert len(vals.cash_balances) == 2
-    assert vals.cash_balances[0].currency == Currency.HKD
-    assert vals.cash_balances[0].amount == 300000.0
-    assert vals.cash_balances[1].currency == Currency.USD
-    assert vals.cash_balances[1].amount == 12820.5
+    assert "FUTUSECURITIES" in ALL_SECURITY_FIRMS
+    assert "FUTUINC" in ALL_SECURITY_FIRMS
+    assert "FUTUSG" in ALL_SECURITY_FIRMS
 
 
 def test_futu_service_parse_positions() -> None:
@@ -647,7 +604,7 @@ def test_futu_service_parse_positions() -> None:
 
     # Stock
     p0 = positions[0]
-    assert p0.symbol == "00700"
+    assert p0.symbol == "HK.00700"
     assert p0.instrument == "Tencent Holdings"
     assert p0.position == 300.0
     assert p0.avg_price == 380.0
@@ -661,7 +618,7 @@ def test_futu_service_parse_positions() -> None:
 
     # Option
     p1 = positions[1]
-    assert p1.symbol == "NVDA250117C00145000"
+    assert p1.symbol == "US.NVDA250117C00145000"
     assert p1.instrument == "NVDA Jan17'25 145 CALL"
     assert p1.position == 2.0
     assert p1.avg_price == 12.5

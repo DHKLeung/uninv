@@ -4,8 +4,13 @@ Connects to Futu OpenD (listening on localhost port 11111 by default)
 using the official `futu-api` package.
 Extracts live account margins, cash balances, and positions into uninv unified models.
 
-All external calls are guarded with fast socket pre-checks to prevent blocking
-when Futu OpenD is offline, and all operations enforce zero-cache live fetching.
+Operates at the Universal Account (uni_card_num) level:
+- Traverses all Trade Contexts (Securities, Futures, Crypto).
+- Uses filter_trdmarket=TrdMarket.NONE for Securities to prevent silent market filtering.
+- Loops through all SecurityFirm enum values to capture all Futu & Moomoo broker subsidiaries.
+- Queries account values in USD (currency="USD").
+- Filters cash balances with high confidence (preserves fractional dust > 1e-8).
+- Aggregates sub-accounts into their parent Universal Account.
 """
 
 import contextlib
@@ -37,12 +42,31 @@ logger = logging.getLogger(__name__)
 futu.SysConfig.set_all_thread_daemon(True)
 futu.SysConfig.enable_console_log(False)
 
+# Discover all real SecurityFirm enum values (excluding NONE / 'N/A')
+ALL_SECURITY_FIRMS: list[str] = [
+    getattr(futu.SecurityFirm, attr)
+    for attr in dir(futu.SecurityFirm)
+    if not attr.startswith("_")
+    and not callable(getattr(futu.SecurityFirm, attr))
+    and getattr(futu.SecurityFirm, attr) != futu.SecurityFirm.NONE
+]
+
 # Regex to detect and parse option codes:
 # US: US.AAPL250117C00200000 or AAPL 250117C00200000
 # HK: HK.TCH240627C380000
 _OPTION_PATTERN = re.compile(r"^(?:[A-Z]{2}\.)?([A-Z0-9]+)\s*(\d{2})(\d{2})(\d{2})([CP])(\d{4,8})$")
 
 _MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+CASH_COLUMN_MAP: list[tuple[str, Currency]] = [
+    ("us_cash", Currency.USD),
+    ("hk_cash", Currency.HKD),
+    ("cn_cash", Currency.CNH),
+    ("jp_cash", Currency.JPY),
+    ("sg_cash", Currency.SGD),
+    ("au_cash", Currency.AUD),
+    ("ca_cash", Currency.CAD),
+]
 
 
 def _safe_float(val: Any, default: float = 0.0) -> float:
@@ -69,7 +93,7 @@ def _map_currency(cur_str: str | None, default: Currency = Currency.USD) -> Curr
 
 
 def _map_exchange(market_str: str | None, code: str) -> Exchange | None:
-    """Infer exchange from market identifier or symbol prefix."""
+    """Infer exchange from market identifier or symbol prefix when clearly defined."""
     code_upper = code.upper()
     if code_upper.startswith("HK.") or market_str == "HK":
         return Exchange.SEHK
@@ -77,13 +101,12 @@ def _map_exchange(market_str: str | None, code: str) -> Exchange | None:
         return Exchange.SSE
     if code_upper.startswith("SZ.") or market_str in ("SZ", "SZSE"):
         return Exchange.SZSE
-    if code_upper.startswith("CC.") or market_str == "CRYPTO":
-        return Exchange.OSL
+    # Crypto or unspecified exchange defaults to None
     return None
 
 
 class FutuService:
-    """Service interfacing with Futu OpenD daemon via futu-api."""
+    """Meta-broker service interfacing with Futu OpenD daemon via futu-api."""
 
     def __init__(
         self,
@@ -95,11 +118,8 @@ class FutuService:
         self.host = host or settings.futu_host
         self.port = port or settings.futu_port
         self.timeout = timeout or settings.futu_timeout
-        self._sec_ctx: futu.OpenSecTradeContext | None = None
-        self._crypto_ctx: futu.OpenCryptoTradeContext | None = None
-        self._future_ctx: futu.OpenFutureTradeContext | None = None
-        self._crypto_accounts: set[str] = set()
-        self._future_accounts: set[str] = set()
+        # Map: uni_card_num -> list of (context_type, firm, acc_id)
+        self._universal_accounts_map: dict[str, list[tuple[str, str, int]]] = {}
         self._lock = threading.Lock()
 
     def is_opend_available(self, timeout: float = 0.3) -> bool:
@@ -110,305 +130,257 @@ class FutuService:
         except OSError:
             return False
 
-    def _get_sec_context(self) -> futu.OpenSecTradeContext:
-        """Retrieve or create an active OpenSecTradeContext."""
+    def _discover_universal_accounts(self) -> dict[str, list[tuple[str, str, int]]]:
+        """Query all contexts and security firms to build the complete Universal Account mapping."""
         if not self.is_opend_available():
             raise ConnectionError(
                 f"Cannot connect to Futu OpenD on {self.host}:{self.port}. "
                 "Please ensure Futu OpenD is running and logged in."
             )
 
-        if (
-            self._sec_ctx is not None
-            and getattr(self._sec_ctx, "status", None) == futu.ContextStatus.READY
-        ):
-            return self._sec_ctx
+        uni_map: dict[str, list[tuple[str, str, int]]] = {}
 
-        try:
-            if self._sec_ctx is not None:
-                with contextlib.suppress(Exception):
-                    self._sec_ctx.close()
-            self._sec_ctx = futu.OpenSecTradeContext(
-                filter_trdmarket=futu.TrdMarket.NONE,
-                host=self.host,
-                port=self.port,
-            )
-            return self._sec_ctx
-        except Exception as e:
-            self._sec_ctx = None
-            raise ConnectionError(f"Failed to connect to Futu OpenD securities context: {e}") from e
+        # 1. Securities Context across all firms
+        for firm in ALL_SECURITY_FIRMS:
+            try:
+                ctx = futu.OpenSecTradeContext(
+                    filter_trdmarket=futu.TrdMarket.NONE,
+                    security_firm=firm,
+                    host=self.host,
+                    port=self.port,
+                )
+                ret, df = ctx.get_acc_list()
+                if ret == futu.RET_OK and isinstance(df, pd.DataFrame) and not df.empty:
+                    real = df[(df["trd_env"] == "REAL") & (df["acc_status"] == "ACTIVE")]
+                    for _, row in real.iterrows():
+                        uni_card = str(row["uni_card_num"]).strip()
+                        acc_id = int(row["acc_id"])
+                        uni_map.setdefault(uni_card, []).append(("SEC", firm, acc_id))
+                ctx.close()
+            except Exception as e:
+                logger.debug("Sec context scan for firm %s failed: %s", firm, e)
 
-    def _get_crypto_context(self) -> futu.OpenCryptoTradeContext:
-        """Retrieve or create an active OpenCryptoTradeContext."""
-        if not self.is_opend_available():
-            raise ConnectionError(
-                f"Cannot connect to Futu OpenD on {self.host}:{self.port}. "
-                "Please ensure Futu OpenD is running and logged in."
-            )
+        # 2. Futures Context across all firms
+        for firm in ALL_SECURITY_FIRMS:
+            try:
+                ctx = futu.OpenFutureTradeContext(
+                    security_firm=firm,
+                    host=self.host,
+                    port=self.port,
+                )
+                ret, df = ctx.get_acc_list()
+                if ret == futu.RET_OK and isinstance(df, pd.DataFrame) and not df.empty:
+                    real = df[(df["trd_env"] == "REAL") & (df["acc_status"] == "ACTIVE")]
+                    for _, row in real.iterrows():
+                        uni_card = str(row["uni_card_num"]).strip()
+                        acc_id = int(row["acc_id"])
+                        uni_map.setdefault(uni_card, []).append(("FUT", firm, acc_id))
+                ctx.close()
+            except Exception as e:
+                logger.debug("Future context scan for firm %s failed: %s", firm, e)
 
-        if (
-            self._crypto_ctx is not None
-            and getattr(self._crypto_ctx, "status", None) == futu.ContextStatus.READY
-        ):
-            return self._crypto_ctx
+        # 3. Crypto Context across all firms
+        for firm in ALL_SECURITY_FIRMS:
+            try:
+                ctx = futu.OpenCryptoTradeContext(
+                    security_firm=firm,
+                    host=self.host,
+                    port=self.port,
+                )
+                ret, df = ctx.get_acc_list()
+                if ret == futu.RET_OK and isinstance(df, pd.DataFrame) and not df.empty:
+                    real = df[(df["trd_env"] == "REAL") & (df["acc_status"] == "ACTIVE")]
+                    for _, row in real.iterrows():
+                        uni_card = str(row["uni_card_num"]).strip()
+                        acc_id = int(row["acc_id"])
+                        uni_map.setdefault(uni_card, []).append(("CRYPTO", firm, acc_id))
+                ctx.close()
+            except Exception as e:
+                logger.debug("Crypto context scan for firm %s failed: %s", firm, e)
 
-        try:
-            if self._crypto_ctx is not None:
-                with contextlib.suppress(Exception):
-                    self._crypto_ctx.close()
-            self._crypto_ctx = futu.OpenCryptoTradeContext(
-                host=self.host,
-                port=self.port,
-            )
-            return self._crypto_ctx
-        except Exception as e:
-            self._crypto_ctx = None
-            raise ConnectionError(f"Failed to connect to Futu OpenD crypto context: {e}") from e
-
-    def _get_future_context(self) -> futu.OpenFutureTradeContext:
-        """Retrieve or create an active OpenFutureTradeContext."""
-        if not self.is_opend_available():
-            raise ConnectionError(
-                f"Cannot connect to Futu OpenD on {self.host}:{self.port}. "
-                "Please ensure Futu OpenD is running and logged in."
-            )
-
-        if (
-            self._future_ctx is not None
-            and getattr(self._future_ctx, "status", None) == futu.ContextStatus.READY
-        ):
-            return self._future_ctx
-
-        try:
-            if self._future_ctx is not None:
-                with contextlib.suppress(Exception):
-                    self._future_ctx.close()
-            self._future_ctx = futu.OpenFutureTradeContext(
-                host=self.host,
-                port=self.port,
-            )
-            return self._future_ctx
-        except Exception as e:
-            self._future_ctx = None
-            raise ConnectionError(f"Failed to connect to Futu OpenD futures context: {e}") from e
+        self._universal_accounts_map = uni_map
+        return uni_map
 
     def get_accounts(self) -> tuple[list[str], datetime]:
-        """Fetch list of active account IDs (securities + crypto + futures) from Futu OpenD."""
+        """Fetch list of all active Universal Account IDs across all Futu and Moomoo entities."""
         with self._lock:
-            accounts: list[str] = []
+            uni_map = self._discover_universal_accounts()
             asof = datetime.now(UTC)
-
-            # 1. Fetch securities accounts
-            sec_ctx = self._get_sec_context()
-            ret_sec, data_sec = sec_ctx.get_acc_list()
-            if ret_sec == futu.RET_OK and isinstance(data_sec, pd.DataFrame) and not data_sec.empty:
-                filtered = data_sec
-                if "trd_env" in data_sec.columns:
-                    filtered = filtered[filtered["trd_env"].astype(str).str.upper() == "REAL"]
-                if "acc_status" in filtered.columns:
-                    filtered = filtered[filtered["acc_status"].astype(str).str.upper() == "ACTIVE"]
-                for _, row in filtered.iterrows():
-                    acc_id = str(row["acc_id"])
-                    if acc_id not in accounts:
-                        accounts.append(acc_id)
-
-            # 2. Fetch crypto accounts
-            try:
-                crypto_ctx = self._get_crypto_context()
-                ret_c, data_c = crypto_ctx.get_acc_list()
-                if ret_c == futu.RET_OK and isinstance(data_c, pd.DataFrame) and not data_c.empty:
-                    filtered_c = data_c
-                    if "trd_env" in data_c.columns:
-                        filtered_c = filtered_c[
-                            filtered_c["trd_env"].astype(str).str.upper() == "REAL"
-                        ]
-                    if "acc_status" in filtered_c.columns:
-                        filtered_c = filtered_c[
-                            filtered_c["acc_status"].astype(str).str.upper() == "ACTIVE"
-                        ]
-                    for _, row in filtered_c.iterrows():
-                        acc_id = str(row["acc_id"])
-                        self._crypto_accounts.add(acc_id)
-                        if acc_id not in accounts:
-                            accounts.append(acc_id)
-            except Exception as e:
-                logger.warning("Futu crypto accounts fetch skipped: %s", e)
-
-            # 3. Fetch futures accounts
-            try:
-                future_ctx = self._get_future_context()
-                ret_f, data_f = future_ctx.get_acc_list()
-                if ret_f == futu.RET_OK and isinstance(data_f, pd.DataFrame) and not data_f.empty:
-                    filtered_f = data_f
-                    if "trd_env" in data_f.columns:
-                        filtered_f = filtered_f[
-                            filtered_f["trd_env"].astype(str).str.upper() == "REAL"
-                        ]
-                    if "acc_status" in filtered_f.columns:
-                        filtered_f = filtered_f[
-                            filtered_f["acc_status"].astype(str).str.upper() == "ACTIVE"
-                        ]
-                    for _, row in filtered_f.iterrows():
-                        acc_id = str(row["acc_id"])
-                        self._future_accounts.add(acc_id)
-                        if acc_id not in accounts:
-                            accounts.append(acc_id)
-            except Exception as e:
-                logger.warning("Futu futures accounts fetch skipped: %s", e)
-
-            return accounts, asof
+            return list(uni_map.keys()), asof
 
     def get_snapshot(self, account_id: str) -> BrokerAccountSnapshot:
-        """Fetch complete live snapshot (AccountValues + Positions) for an account."""
+        """Fetch complete live snapshot (AccountValues + Positions) for a Universal Account."""
         with self._lock:
-            try:
-                acc_id_int = int(account_id)
-            except ValueError as err:
-                raise ValueError(f"Invalid Futu account ID: {account_id}") from err
+            if not self.is_opend_available():
+                raise ConnectionError(
+                    f"Cannot connect to Futu OpenD on {self.host}:{self.port}. "
+                    "Please ensure Futu OpenD is running and logged in."
+                )
 
-            # Select context based on account type
-            if account_id in self._crypto_accounts:
-                ctx = self._get_crypto_context()
-            elif account_id in self._future_accounts:
-                ctx = self._get_future_context()
+            # Discover or refresh accounts mapping
+            if account_id not in self._universal_accounts_map:
+                self._discover_universal_accounts()
+
+            if account_id not in self._universal_accounts_map:
+                raise ValueError(
+                    f"Universal account '{account_id}' not found. "
+                    f"Available accounts: {list(self._universal_accounts_map.keys())}"
+                )
+
+            sub_accounts = self._universal_accounts_map[account_id]
+
+            total_assets = 0.0
+            total_gross_mv = 0.0
+            total_maint_margin = 0.0
+            total_fund_assets = 0.0
+            total_bond_assets = 0.0
+            all_positions: list[Position] = []
+            cash_by_currency: dict[Currency, float] = {}
+            fallback_unrealized_pnl = 0.0
+
+            for c_type, firm, sub_acc_id in sub_accounts:
+                ctx = None
+                try:
+                    if c_type == "SEC":
+                        ctx = futu.OpenSecTradeContext(
+                            filter_trdmarket=futu.TrdMarket.NONE,
+                            security_firm=firm,
+                            host=self.host,
+                            port=self.port,
+                        )
+                    elif c_type == "FUT":
+                        ctx = futu.OpenFutureTradeContext(
+                            security_firm=firm,
+                            host=self.host,
+                            port=self.port,
+                        )
+                    else:
+                        ctx = futu.OpenCryptoTradeContext(
+                            security_firm=firm,
+                            host=self.host,
+                            port=self.port,
+                        )
+
+                    # 1. Query live positions with zero-cache
+                    ret_pos, pos_df = ctx.position_list_query(
+                        acc_id=sub_acc_id,
+                        refresh_cache=True,
+                    )
+                    if ret_pos == futu.RET_OK and isinstance(pos_df, pd.DataFrame):
+                        positions = self._parse_positions(pos_df)
+                        all_positions.extend(positions)
+
+                    # 2. Query live account margins & balances in USD
+                    ret_info, info_df = ctx.accinfo_query(
+                        acc_id=sub_acc_id,
+                        currency="USD",
+                        refresh_cache=True,
+                    )
+                    if (
+                        ret_info == futu.RET_OK
+                        and isinstance(info_df, pd.DataFrame)
+                        and not info_df.empty
+                    ):
+                        row = info_df.iloc[0]
+                        total_assets += _safe_float(row.get("total_assets"), 0.0)
+                        pos_mv = _safe_float(row.get("market_val"), 0.0)
+                        crypto_mv = _safe_float(row.get("crypto_mv"), 0.0)
+                        fund_mv = _safe_float(row.get("fund_assets"), 0.0)
+                        bond_mv = _safe_float(row.get("bond_assets"), 0.0)
+                        total_fund_assets += fund_mv
+                        total_bond_assets += bond_mv
+                        total_gross_mv += pos_mv + crypto_mv + fund_mv + bond_mv
+                        total_maint_margin += _safe_float(row.get("maintenance_margin"), 0.0)
+                        fallback_unrealized_pnl += _safe_float(row.get("unrealized_pl"), 0.0)
+
+                        # Accumulate multi-currency cash balances
+                        for col_name, currency_enum in CASH_COLUMN_MAP:
+                            if col_name in row:
+                                amt = _safe_float(row.get(col_name), 0.0)
+                                if abs(amt) > 1e-8:
+                                    cash_by_currency[currency_enum] = (
+                                        cash_by_currency.get(currency_enum, 0.0) + amt
+                                    )
+                finally:
+                    if ctx is not None:
+                        with contextlib.suppress(Exception):
+                            ctx.close()
+
+            # Append synthetic holding rows for fund and bond assets if details cannot be retrieved
+            if total_fund_assets > 1e-8:
+                all_positions.append(
+                    Position(
+                        instrument="Fund Assets",
+                        symbol=None,
+                        position=total_fund_assets,
+                        avg_price=None,
+                        mark_price=1.0,
+                        cost_basis=None,
+                        market_value=total_fund_assets,
+                        unrealized_pnl=0.0,
+                        multiplier=1.0,
+                        currency=Currency.USD,
+                        exchange=None,
+                        sec_type=SecurityType.FUNDS,
+                    )
+                )
+
+            if total_bond_assets > 1e-8:
+                all_positions.append(
+                    Position(
+                        instrument="Bond Assets",
+                        symbol=None,
+                        position=total_bond_assets,
+                        avg_price=None,
+                        mark_price=1.0,
+                        cost_basis=None,
+                        market_value=total_bond_assets,
+                        unrealized_pnl=0.0,
+                        multiplier=1.0,
+                        currency=Currency.USD,
+                        exchange=None,
+                        sec_type=SecurityType.BONDS,
+                    )
+                )
+
+            # Calculate total unrealized P&L from positions, or fall back to accinfo
+            if all_positions:
+                total_unrealized_pnl = sum(p.unrealized_pnl for p in all_positions)
             else:
-                ctx = self._get_sec_context()
+                total_unrealized_pnl = fallback_unrealized_pnl
 
-            # 1. Fetch positions with refresh_cache=True (zero-cache live snapshot)
-            ret_pos, pos_df = ctx.position_list_query(
-                acc_id=acc_id_int,
-                refresh_cache=True,
-            )
-            if ret_pos != futu.RET_OK:
-                # If first attempt failed and context was default, try crypto or future
-                if (
-                    account_id not in self._crypto_accounts
-                    and account_id not in self._future_accounts
-                ):
-                    for c_type, get_ctx_fn in [
-                        (self._crypto_accounts, self._get_crypto_context),
-                        (self._future_accounts, self._get_future_context),
-                    ]:
-                        try:
-                            alt_ctx = get_ctx_fn()
-                            r_p, p_df = alt_ctx.position_list_query(
-                                acc_id=acc_id_int, refresh_cache=True
-                            )
-                            if r_p == futu.RET_OK:
-                                c_type.add(account_id)
-                                ctx = alt_ctx
-                                pos_df = p_df
-                                ret_pos = r_p
-                                break
-                        except Exception:
-                            pass
-                if ret_pos != futu.RET_OK:
-                    raise ConnectionError(f"Futu position_list_query failed: {pos_df}")
+            # If gross position value is 0 but we have positions, sum their market values
+            if total_gross_mv == 0.0 and all_positions:
+                total_gross_mv = sum(p.market_value for p in all_positions)
 
-            # 2. Fetch account asset information with refresh_cache=True
-            ret_acc, acc_df = ctx.accinfo_query(
-                acc_id=acc_id_int,
-                refresh_cache=True,
+            # Build multi-currency cash balance breakdown (strictly non-zero)
+            cash_balances = [
+                CashBalanceItem(currency=c, amount=amt)
+                for c, amt in sorted(cash_by_currency.items(), key=lambda x: x[0].value)
+                if abs(amt) > 1e-8
+            ]
+
+            excess_liquidity = max(0.0, total_assets - total_maint_margin)
+
+            account_values = AccountValues(
+                currency=Currency.USD,
+                net_liquidation=total_assets,
+                gross_position_value=total_gross_mv,
+                maint_margin_req=total_maint_margin,
+                excess_liquidity=excess_liquidity,
+                unrealized_pnl=total_unrealized_pnl,
+                cash_balances=cash_balances,
             )
-            if ret_acc != futu.RET_OK:
-                raise ConnectionError(f"Futu accinfo_query failed: {acc_df}")
 
             asof = datetime.now(UTC)
-            positions = self._parse_positions(pos_df)
-            account_values = self._parse_account_values(acc_df, positions=positions)
 
             return BrokerAccountSnapshot(
                 broker_id="futu",
                 account_id=account_id,
                 asof=asof,
                 account_values=account_values,
-                positions=positions,
+                positions=all_positions,
             )
-
-    def _parse_account_values(
-        self,
-        df: Any,
-        positions: list[Position] | None = None,
-    ) -> AccountValues:
-        """Convert Futu accinfo_query DataFrame into AccountValues model."""
-        if not isinstance(df, pd.DataFrame) or df.empty:
-            return AccountValues(
-                currency=Currency.USD,
-                available_funds=0.0,
-                buying_power=0.0,
-                cash_balance=0.0,
-                cash_balances=[],
-                equity_with_loan_value=0.0,
-                excess_liquidity=0.0,
-                gross_position_value=0.0,
-                init_margin_req=0.0,
-                maint_margin_req=0.0,
-                net_liquidation=0.0,
-                unrealized_pnl=0.0,
-            )
-
-        row = df.iloc[0]
-        cur_raw = str(row.get("currency", "USD"))
-        base_currency = _map_currency(cur_raw, Currency.USD)
-
-        net_liq = _safe_float(row.get("total_assets"), 0.0)
-        gross_pos = _safe_float(row.get("market_val"), 0.0)
-        if gross_pos == 0.0:
-            gross_pos = _safe_float(row.get("crypto_mv"), 0.0)
-        cash = _safe_float(row.get("cash"), 0.0)
-        power = _safe_float(row.get("power"), 0.0)
-        avl_funds = _safe_float(row.get("available_funds"), power)
-        init_margin = _safe_float(row.get("initial_margin"), 0.0)
-        maint_margin = _safe_float(row.get("maintenance_margin"), 0.0)
-
-        excess_liq = max(0.0, net_liq - maint_margin) if maint_margin > 0 else avl_funds
-
-        # Unrealized P&L: if accinfo_query returns 'N/A', estimate from positions
-        unrealized = _safe_float(row.get("unrealized_pl"), 0.0)
-        if unrealized == 0.0 and positions:
-            pos_pnl_sum = sum(p.unrealized_pnl for p in positions)
-            pos_mv_sum = sum(p.market_value for p in positions)
-            if pos_mv_sum > 0 and gross_pos > 0:
-                effective_fx = gross_pos / pos_mv_sum
-                unrealized = pos_pnl_sum * effective_fx
-            else:
-                unrealized = pos_pnl_sum
-
-        # Build multi-currency cash balances list
-        cash_balances: list[CashBalanceItem] = []
-        currency_cash_map = [
-            ("hk_cash", Currency.HKD),
-            ("us_cash", Currency.USD),
-            ("cn_cash", Currency.CNH),
-            ("jp_cash", Currency.JPY),
-            ("sg_cash", Currency.SGD),
-            ("au_cash", Currency.AUD),
-            ("ca_cash", Currency.CAD),
-        ]
-        for col_name, currency_enum in currency_cash_map:
-            if col_name in row:
-                amount = _safe_float(row[col_name], 0.0)
-                if abs(amount) > 1e-6:
-                    cash_balances.append(CashBalanceItem(currency=currency_enum, amount=amount))
-
-        # If no breakdown exists, populate with base cash balance
-        if not cash_balances and abs(cash) > 1e-6:
-            cash_balances.append(CashBalanceItem(currency=base_currency, amount=cash))
-
-        return AccountValues(
-            currency=base_currency,
-            available_funds=avl_funds,
-            buying_power=power,
-            cash_balance=cash,
-            cash_balances=cash_balances,
-            equity_with_loan_value=net_liq,
-            excess_liquidity=excess_liq,
-            gross_position_value=gross_pos,
-            init_margin_req=init_margin,
-            maint_margin_req=maint_margin,
-            net_liquidation=net_liq,
-            unrealized_pnl=unrealized,
-        )
 
     def _parse_positions(self, df: Any) -> list[Position]:
         """Convert Futu position_list_query DataFrame into Position list."""
@@ -421,19 +393,17 @@ class FutuService:
             if not code:
                 continue
 
-            # Strip market prefix for clean contract symbol (e.g. "US.AAPL" -> "AAPL")
+            # Use the broker's native symbol code (e.g. "US.TSM", "CC.BTC")
             symbol = code
-            if "." in code:
-                symbol = code.split(".", 1)[1]
-
             stock_name = str(row.get("stock_name", symbol)).strip()
             qty = _safe_float(row.get("qty"), 0.0)
             side = str(row.get("position_side", "LONG")).upper()
             if side == "SHORT" and qty > 0:
                 qty = -qty
 
+            avg_cost = _safe_float(row.get("average_cost"), 0.0)
             cost_price = _safe_float(row.get("cost_price"), 0.0)
-            avg_price = cost_price if cost_price > 0 else _safe_float(row.get("average_cost"), 0.0)
+            avg_price = avg_cost if avg_cost > 0 else cost_price
             mark_price = _safe_float(row.get("nominal_price"), 0.0)
             market_val = _safe_float(row.get("market_val"), 0.0)
             unrealized_raw = _safe_float(row.get("unrealized_pl"), 0.0)
@@ -519,22 +489,6 @@ class FutuService:
             )
 
         return positions
-
-    def close(self) -> None:
-        """Close open context connections."""
-        with self._lock:
-            if self._sec_ctx is not None:
-                with contextlib.suppress(Exception):
-                    self._sec_ctx.close()
-                self._sec_ctx = None
-            if self._crypto_ctx is not None:
-                with contextlib.suppress(Exception):
-                    self._crypto_ctx.close()
-                self._crypto_ctx = None
-            if self._future_ctx is not None:
-                with contextlib.suppress(Exception):
-                    self._future_ctx.close()
-                self._future_ctx = None
 
 
 futu_service = FutuService()
