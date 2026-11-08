@@ -149,11 +149,13 @@ _Last updated: 2026-11-08_
 - ✅ Futubull Integration via `futu-api` (Futu OpenD):
   - Added official `futu-api` package (v10.12.7208).
   - Built `backend/src/uninv_backend/futu.py` (`FutuService`, `futu_service`) connecting to Futu OpenD on port 11111 with fast TCP socket pre-flight probing (`is_opend_available`), preventing `futu-api`'s infinite reconnect loop when OpenD is offline.
-  - Daemon thread configuration (`futu.SysConfig.set_all_thread_daemon(True)`) guarantees clean process shutdown.
+  - Multi-context architecture: seamlessly manages both `futu.OpenSecTradeContext` (equities, options, funds) and `futu.OpenCryptoTradeContext` (cryptocurrency accounts and holdings like `CC.BTC`).
+  - Robust float parser (`_safe_float`) protects against Futu's string `"N/A"` or null returns on inactive/non-applicable balance items.
+  - Native USD conversion support: Futu's `accinfo_query(currency="USD")` directly converts multi-currency asset values and margin requirements using Futu's real-time internal rates.
   - Non-blocking execution via `anyio.to_thread.run_sync()`, isolating Futu's synchronous SDK in FastAPI's threadpool without blocking Uvicorn's main `asyncio` event loop or IBKR sockets.
-  - Normalizes US and HK stock and option positions, contract multipliers, expiration dates, and multi-currency cash balances (`hk_cash`, `us_cash`, `cn_cash`, `jp_cash`, etc.) into unified `BrokerAccountSnapshot` models.
+  - Normalizes US and HK stock, option, and crypto positions, contract multipliers, expiration dates, and multi-currency cash balances (`hk_cash`, `us_cash`, `cn_cash`, `jp_cash`, etc.) into unified `BrokerAccountSnapshot` models.
+  - Verified live connection against Futu OpenD: successfully pulls real margin accounts (`TSM`, `SPYM`, `QQQM`, `ASML`) and crypto accounts (`BTC`).
   - Tested with 29 comprehensive unit tests across IBKR and Futu; setup guide documented in `gateways/futu_gateway/instruction.md`.
 
 ### Next steps
 1. Future GUI redesign per user specifications.
-2. Verify live Futu OpenD connection with user.
