@@ -93,8 +93,8 @@ async def get_snapshot(
     account_id: Annotated[
         str,
         Query(
-            description="Broker account ID, e.g. 'U16110728' or '28173918'",
-            examples=["U16110728", "28173918"],
+            description="Broker account ID, e.g. 'U1234567' or '88888888'",
+            examples=["U1234567", "88888888"],
         ),
     ],
 ) -> BrokerAccountSnapshot:

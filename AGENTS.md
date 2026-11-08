@@ -104,8 +104,8 @@ _Last updated: 2026-11-08_
   - `SecurityType.FUTURES_OPTIONS` value is `"FUTURES OPTIONS"` (with space) directly in the Enum.
   - Endpoints converted to query parameters and synchronous handlers (`def`, run in FastAPI threadpool):
     - `GET /api/v1/supporting-brokers`: returns `[{"id": "ibkr", "name": "Interactive Brokers"}]`.
-    - `GET /api/v1/accounts?broker_id=ibkr`: returns `AccountsResponse` dict `{"broker_id": "ibkr", "asof": "...", "accounts": ["U16110728"]}`.
-    - `GET /api/v1/snapshot?broker_id=ibkr&account_id=U16110728`: unified account snapshot combining account-wide margins/cash (`AccountValues`), open holdings (`Position` list), and UTC `asof` timestamp.
+    - `GET /api/v1/accounts?broker_id=ibkr`: returns `AccountsResponse` dict `{"broker_id": "ibkr", "asof": "...", "accounts": ["U1234567"]}`.
+    - `GET /api/v1/snapshot?broker_id=ibkr&account_id=U1234567`: unified account snapshot combining account-wide margins/cash (`AccountValues`), open holdings (`Position` list), and UTC `asof` timestamp.
     - `GET /api/v1/currencies`: returns list of all 11 supported currency codes (`USD`, `HKD`, `EUR`, `GBP`, `JPY`, `CAD`, `AUD`, `CHF`, `CNH`, `SGD`, `NZD`).
     - `GET /api/v1/fx?base=EUR&quote=USD`: live FX exchange rate resolved via graph routing with in-memory caching, reciprocal/multi-hop pathfinding, and UTC `asof` timestamp.
   - `FxRouter` in `backend/src/uninv_backend/fx.py`:
@@ -164,7 +164,7 @@ _Last updated: 2026-11-08_
     - Strict zero filtering on cash balances: preserves fractional dust (`abs(amt) > 1e-8`), ignores true zero balances.
   - Futu as a Meta-Broker:
     - Broker name standardized to `Futu` (supporting-brokers endpoint returns `[{"id": "ibkr", "name": "Interactive Brokers"}, {"id": "futu", "name": "Futu"}]`).
-    - Operates at the **Universal Account level** (`uni_card_num`), e.g. `...7283`, `...0281`, `...3055`, `...9836`.
+    - Operates at the **Universal Account level** (`uni_card_num`), e.g. `...1001`, `...1002`, `...2001`, `...2002`.
     - Traverses all 3 contexts: `OpenSecTradeContext(filter_trdmarket=TrdMarket.NONE)` (disabling silent HK filtering), `OpenFutureTradeContext`, `OpenCryptoTradeContext`.
     - Automatically loops over all `SecurityFirm` enum values (`FUTUSECURITIES`, `FUTUINC`, `FUTUSG`, `FUTUAU`, `FUTUCA`, `FUTUJP`, `FUTUMY`) to ingest both Futubull HK and Moomoo US accounts in ~110ms total.
     - Preserves broker's native instrument name and symbol (e.g. `US.TSM`, `CC.BTC`) without forced symbol stripping.
@@ -172,7 +172,7 @@ _Last updated: 2026-11-08_
     - Snapshot queries fetch account values with `currency="USD"`, delegating all presentation conversions to `uninv`'s FX matrix and GUI.
   - Desktop GUI Alignment:
     - Metrics Board streamlined to Hero metrics (`Net Liquidation Value`, `Unrealized P&L` + badge) and key grid (`Gross Position Value`, `Maint Margin Req`, `Excess Liquidity`).
-    - Account horizontal tiles display clean formatted IDs (e.g. `...0281`, `...7283`, `...3055`).
+    - Account horizontal tiles display clean formatted IDs (e.g. `...1001`, `...1002`, `...2001`).
     - In "All Accounts", positions are displayed additively without forced symbol merging; cash balances are summed across all non-zero currency holdings.
   - 29/29 tests pass, Ruff check passes, Tauri `cargo check` passes, live verified with screenshot.
 

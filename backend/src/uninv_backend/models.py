@@ -196,7 +196,7 @@ class BrokerAccountSnapshot(UninvModel):
     """Complete account snapshot combining account values and open positions."""
 
     broker_id: str = Field(description="Broker identifier, e.g. 'ibkr'")
-    account_id: str = Field(description="Broker account identifier, e.g. 'U16110728'")
+    account_id: str = Field(description="Broker account identifier, e.g. 'U1234567'")
     asof: datetime = Field(description="UTC timestamp of the query (ISO 8601)")
     account_values: AccountValues = Field(description="Account-wide margins and cash balances")
     positions: list[Position] = Field(default_factory=list, description="Open positions")

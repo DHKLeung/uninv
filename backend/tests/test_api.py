@@ -50,13 +50,13 @@ def test_accounts_endpoint(client: TestClient) -> None:
     with patch(
         "uninv_backend.api.routes.ibkr_service.get_accounts",
         new_callable=AsyncMock,
-        return_value=(["U16110728"], test_dt),
+        return_value=(["U1234567"], test_dt),
     ):
         resp = client.get("/api/v1/accounts?broker_id=ibkr")
         assert resp.status_code == 200
         data = resp.json()
         assert data["broker_id"] == "ibkr"
-        assert data["accounts"] == ["U16110728"]
+        assert data["accounts"] == ["U1234567"]
         assert "2026-11-07T23:00:00" in data["asof"]
 
 
@@ -131,7 +131,7 @@ def test_snapshot_endpoint(client: TestClient) -> None:
 
     mock_snapshot = BrokerAccountSnapshot(
         broker_id="ibkr",
-        account_id="U16110728",
+        account_id="U1234567",
         asof=test_dt,
         account_values=mock_values,
         positions=mock_positions,
@@ -142,11 +142,11 @@ def test_snapshot_endpoint(client: TestClient) -> None:
         new_callable=AsyncMock,
         return_value=mock_snapshot,
     ):
-        resp = client.get("/api/v1/snapshot?broker_id=ibkr&account_id=U16110728")
+        resp = client.get("/api/v1/snapshot?broker_id=ibkr&account_id=U1234567")
         assert resp.status_code == 200
         data = resp.json()
         assert data["broker_id"] == "ibkr"
-        assert data["account_id"] == "U16110728"
+        assert data["account_id"] == "U1234567"
         assert "2026-11-07T23:00:00" in data["asof"]
 
         # Check account values
@@ -188,7 +188,7 @@ def test_snapshot_endpoint(client: TestClient) -> None:
 
 
 def test_snapshot_unknown_broker_404(client: TestClient) -> None:
-    resp = client.get("/api/v1/snapshot?broker_id=futubull&account_id=U16110728")
+    resp = client.get("/api/v1/snapshot?broker_id=futubull&account_id=U1234567")
     assert resp.status_code == 404
 
 
@@ -472,13 +472,13 @@ def test_futu_accounts_endpoint(client: TestClient) -> None:
     test_dt = datetime(2026, 11, 8, 14, 0, 0, tzinfo=UTC)
     with patch(
         "uninv_backend.api.routes.futu_service.get_accounts",
-        return_value=(["28173918"], test_dt),
+        return_value=(["88888888"], test_dt),
     ):
         resp = client.get("/api/v1/accounts?broker_id=futu")
         assert resp.status_code == 200
         data = resp.json()
         assert data["broker_id"] == "futu"
-        assert data["accounts"] == ["28173918"]
+        assert data["accounts"] == ["88888888"]
         assert "2026-11-08T14:00:00" in data["asof"]
 
 
@@ -496,7 +496,7 @@ def test_futu_snapshot_endpoint(client: TestClient) -> None:
     test_dt = datetime(2026, 11, 8, 14, 0, 0, tzinfo=UTC)
     mock_snapshot = BrokerAccountSnapshot(
         broker_id="futu",
-        account_id="1001272756530281",
+        account_id="1000000000000001",
         asof=test_dt,
         account_values=AccountValues(
             currency=Currency.USD,
@@ -531,11 +531,11 @@ def test_futu_snapshot_endpoint(client: TestClient) -> None:
         "uninv_backend.api.routes.futu_service.get_snapshot",
         return_value=mock_snapshot,
     ):
-        resp = client.get("/api/v1/snapshot?broker_id=futu&account_id=1001272756530281")
+        resp = client.get("/api/v1/snapshot?broker_id=futu&account_id=1000000000000001")
         assert resp.status_code == 200
         data = resp.json()
         assert data["broker_id"] == "futu"
-        assert data["account_id"] == "1001272756530281"
+        assert data["account_id"] == "1000000000000001"
         assert data["account_values"]["net_liquidation"] == 500000.0
         assert data["account_values"]["excess_liquidity"] == 470000.0
         assert len(data["positions"]) == 1
@@ -547,7 +547,7 @@ def test_futu_snapshot_service_unavailable_503(client: TestClient) -> None:
         "uninv_backend.api.routes.futu_service.get_snapshot",
         side_effect=ConnectionError("Cannot connect to Futu OpenD"),
     ):
-        resp = client.get("/api/v1/snapshot?broker_id=futu&account_id=1001272756530281")
+        resp = client.get("/api/v1/snapshot?broker_id=futu&account_id=1000000000000001")
         assert resp.status_code == 503
         assert "Cannot connect to Futu OpenD" in resp.json()["detail"]
 

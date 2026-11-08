@@ -2,7 +2,22 @@
 
 **uninv** (**uni**fied + **inv**esting) is a cross-platform desktop application designed for retail investors to monitor and consolidate multiple broker accounts into a **single, unified portfolio view**. 
 
-It pulls real-time balances, margins, multi-currency cash holdings, and open positions directly from local broker gateway daemons, translates them into standardized financial models, and provides instantaneous multi-currency conversion across 11 global fiat currencies.
+It connects directly to local standalone broker gateway daemons, translates disparate broker feeds into standardized financial ledger models, and provides instantaneous multi-currency conversion across 11 global fiat currencies.
+
+---
+
+## Showcase
+
+### 1. Unified Portfolio View
+Consolidates account-level margins, hero financial metrics, un-aggregated positions across equities, options, futures, and crypto, and multi-currency cash balances.
+![Portfolio Overview](docs/images/portfolio.png)
+
+### 2. Broker Gateways Manager
+Manage Host/IP and TCP ports for each broker gateway with live socket and handshake connectivity testing.
+![Broker Gateways Settings](docs/images/settings.png)
+
+### 3. Application Info & Branding
+![About uninv](docs/images/about.png)
 
 ---
 
@@ -66,46 +81,20 @@ flowchart LR
     RS <--"HTTP localhost:8000"--> API
 ```
 
-### Why Standalone Broker Daemons?
-`uninv` does **not** store or ask for your broker account passwords or API secrets. Instead, you run your broker's official standalone gateway (TWS, IB Gateway, or Futu OpenD) on your machine. Those programs handle biometric passkeys (Windows Hello, Touch ID), hardware FIDO2 keys, and SMS/app 2FA natively. Once authenticated, `uninv` communicates locally over private loopback sockets (`127.0.0.1`).
-
 ---
 
-## Repository Layout
+## Broker Gateway Setup Guides
 
-```text
-uninv/
-├── backend/                       # Python 3.13 FastAPI service (uv project)
-│   ├── pyproject.toml             # Dependencies and tool configurations
-│   ├── uv.lock                    # Locked dependency versions
-│   ├── src/uninv_backend/
-│   │   ├── __init__.py            # CLI entry point (`uv run uninv-backend`)
-│   │   ├── app.py                 # FastAPI application factory & CORS setup
-│   │   ├── config.py              # Pydantic BaseSettings & dynamic gateway updates
-│   │   ├── models.py              # Unified Pydantic models & strict StrEnums
-│   │   ├── ibkr.py                # Native asyncio IBKR connector (ib_async)
-│   │   ├── futu.py                # Threadpool Futu meta-broker connector (futu-api)
-│   │   ├── fx.py                  # FX matrix router & cross-rate pathfinding
-│   │   └── api/routes.py          # Clean REST endpoints under /api/v1
-│   └── tests/                     # Comprehensive test suite (31 tests)
-├── desktop/                       # Tauri 2 cross-platform desktop shell
-│   ├── src/                       # Frontend web assets (served without Node.js)
-│   │   ├── index.html             # Application markup (Portfolio, Settings, About)
-│   │   ├── styles.css             # Dark theme design system & hairline layouts
-│   │   ├── assets/                # App brand icons (SVG, PNG)
-│   │   └── js/
-│   │       ├── api.js             # Tauri invoke proxy with browser fetch fallback
-│   │       ├── format.js          # Currency, percentage, quantity formatters & FX
-│   │       └── main.js            # Reactive application controller & event wiring
-│   └── src-tauri/                 # Thin Rust shell
-│       ├── Cargo.toml             # Rust dependencies (reqwest, serde, tauri)
-│       ├── tauri.conf.json        # Tauri 2 configuration & capabilities
-│       └── src/lib.rs             # Generic api_get / api_post commands
-├── docs/                          # Architectural decisions & post-mortem records
-├── gateways/                      # Setup instructions for IB Gateway & Futu OpenD
-├── scripts/                       # Cross-platform startup scripts (Windows, macOS, Linux)
-└── AGENTS.md                      # AI coding agent operational guidance & project status
-```
+`uninv` interfaces with official standalone broker daemons running on your host machine. This architecture ensures your credentials, biometric passkeys (Windows Hello / Apple Touch ID), hardware FIDO2 keys, and 2FA tokens are authenticated directly by the broker's official software without being handled or stored by `uninv`.
+
+Before launching `uninv`, set up the broker daemons you use:
+
+| Broker Gateway | Supported Platforms | Default Port | Setup Documentation |
+|---|---|---|---|
+| **Interactive Brokers (TWS / IB Gateway)** | Windows, macOS, Linux | `7496` (TWS) / `4001` (IB Gateway) | [IB Gateway Setup Instruction](gateways/ib_gateway/instruction.md) |
+| **Futu OpenD (Futubull / Moomoo)** | Windows, macOS, Linux | `11111` | [Futu OpenD Setup Instruction](gateways/futu_gateway/instruction.md) |
+
+*(Note: `uninv` works with one or both brokers active. If a gateway is offline, `uninv` cleanly marks it as unavailable while continuing to display data from any connected brokers).*
 
 ---
 
@@ -208,20 +197,41 @@ cargo check
 
 ---
 
-## Roadmap
+## Repository Layout
 
-- [x] **v1.0.0: Unified Retail Portfolio Core**
-  - [x] Standalone broker daemon architecture (IB Gateway/TWS on port 7496, Futu OpenD on port 11111).
-  - [x] Futu meta-broker multi-context ingestion (Securities, Futures, Crypto across all global entities).
-  - [x] Streamlined Account Values ledger (`Cash Balance + Gross Position Value == Net Liquidation Value`).
-  - [x] Holdings Positions table (12 columns: broker, instrument/symbol, type/exchange, position, avg price, mark price, cost basis, market value, last trading date, unrealised P&L, weight, currency).
-  - [x] Dynamic FX matrix synthesis & instant client-side conversion across 11 global currencies.
-  - [x] Settings page for runtime broker gateway Host/IP and Port configuration with connection testing.
-  - [x] Production packaging readiness with consistent purple square branding.
-- [ ] **v1.1.0: Local Persistence & Analytics**
-  - [ ] Local SQLite storage for historical portfolio snapshots and equity curve tracking.
-  - [ ] User-configurable asset allocation targets and DCA rebalancing planners.
-  - [ ] Consolidated portfolio performance and allocation charts.
-- [ ] **v2.0.0: Option Strategy Tools & Native Packaging**
-  - [ ] PyInstaller sidecar embedding for single-click zero-install desktop distribution.
-  - [ ] Interactive multi-leg option strategy payoffs and Greeks visualization.
+```text
+uninv/
+├── backend/                       # Python 3.13 FastAPI service (uv project)
+│   ├── pyproject.toml             # Dependencies and tool configurations
+│   ├── uv.lock                    # Locked dependency versions
+│   ├── src/uninv_backend/
+│   │   ├── __init__.py            # CLI entry point (`uv run uninv-backend`)
+│   │   ├── app.py                 # FastAPI application factory & CORS setup
+│   │   ├── config.py              # Pydantic BaseSettings & dynamic gateway updates
+│   │   ├── models.py              # Unified Pydantic models & strict StrEnums
+│   │   ├── ibkr.py                # Native asyncio IBKR connector (ib_async)
+│   │   ├── futu.py                # Threadpool Futu meta-broker connector (futu-api)
+│   │   ├── fx.py                  # FX matrix router & cross-rate pathfinding
+│   │   └── api/routes.py          # Clean REST endpoints under /api/v1
+│   └── tests/                     # Comprehensive test suite (31 tests)
+├── desktop/                       # Tauri 2 cross-platform desktop shell
+│   ├── src/                       # Frontend web assets (served without Node.js)
+│   │   ├── index.html             # Application markup (Portfolio, Settings, About)
+│   │   ├── styles.css             # Dark theme design system & hairline layouts
+│   │   ├── assets/                # App brand icons (SVG, PNG)
+│   │   └── js/
+│   │       ├── api.js             # Tauri invoke proxy with browser fetch fallback
+│   │       ├── format.js          # Currency, percentage, quantity formatters & FX
+│   │       └── main.js            # Reactive application controller & event wiring
+│   └── src-tauri/                 # Thin Rust shell
+│       ├── Cargo.toml             # Rust dependencies (reqwest, serde, tauri)
+│       ├── tauri.conf.json        # Tauri 2 configuration & capabilities
+│       └── src/lib.rs             # Generic api_get / api_post commands
+├── docs/                          # Architectural decisions, images & post-mortems
+│   ├── images/                    # UI showcase screenshots
+│   ├── architecture.md            # Architecture decision records
+│   └── trials_and_errors.md       # Technical trials & post-mortem notes
+├── gateways/                      # Setup instructions for IB Gateway & Futu OpenD
+├── scripts/                       # Cross-platform startup scripts (Windows, macOS, Linux)
+└── AGENTS.md                      # AI coding agent operational guidance & project status
+```
