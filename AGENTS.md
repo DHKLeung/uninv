@@ -96,11 +96,12 @@ backend running, then
 
 ## Current status (update this section as work progresses)
 
-_Last updated: 2026-11-07_
+_Last updated: 2026-11-08_
 
 - ✅ Backend rewritten to standardized broker feed and unified snapshot model:
   - Abstracted all broker complexity into FastAPI: backend translates raw broker feeds into uninv unified models with strict Enums for loud failure on new items.
-  - Enums defined: `Currency` (USD, HKD, EUR, etc.), `Exchange` (BATS, ARCA, NASDAQ, AMEX, NYSE, CME, OSL, IDEALPRO, etc.), `SecurityType` (STOCKS, OPTIONS, FUTURES, FUTURES_OPTIONS, CRYPTO, CASH), and `OptionType` (CALL, PUT).
+  - Enums defined: `Currency` (USD, HKD, EUR, etc.), `Exchange` (BATS, ARCA, NASDAQ, AMEX, NYSE, CME, OSL, IDEALPRO, etc.), `SecurityType` (STOCKS, OPTIONS, FUTURES, FUTURES OPTIONS, CRYPTO, CASH), and `OptionType` (CALL, PUT).
+  - `SecurityType.FUTURES_OPTIONS` value is `"FUTURES OPTIONS"` (with space) directly in the Enum.
   - Endpoints converted to query parameters and synchronous handlers (`def`, run in FastAPI threadpool):
     - `GET /api/v1/supporting-brokers`: returns `[{"id": "ibkr", "name": "Interactive Brokers"}]`.
     - `GET /api/v1/accounts?broker_id=ibkr`: returns `AccountsResponse` dict `{"broker_id": "ibkr", "asof": "...", "accounts": ["U16110728"]}`.
@@ -116,10 +117,12 @@ _Last updated: 2026-11-07_
     - Account-wide totals (non-BASE, explicit currency): `available_funds`, `buying_power`, `cash_balance`, `cash_balances` (multi-currency list), `equity_with_loan_value`, `excess_liquidity`, `gross_position_value`, `init_margin_req`, `maint_margin_req`, `net_liquidation`, `unrealized_pnl`.
   - `IBKRService` in `backend/src/uninv_backend/ibkr.py` connects directly to TWS on port 7496 with `readonly=True` (connects in ~0.1s), thread-safe querying via `threading.Lock`, and in-memory contract name/FX caching.
   - All 18 backend tests pass, Ruff check passes, Tauri `cargo check` passes.
-- ✅ Desktop GUI updated and verified working:
+- ✅ Desktop GUI updated with dynamic multi-currency discovery and verified working:
   - Consumes `/api/v1/snapshot`, `/api/v1/supporting-brokers`, `/api/v1/accounts`, `/api/v1/fx`.
-  - Renders headline KPIs, multi-account pills, precision derivative instrument badges, sortable table, and multi-currency cash balances.
-  - Live verified with headless Edge CDP screenshot rendering live TWS data.
+  - Zero USD assumption: GUI dynamically discovers all distinct source currencies across snapshots (`account_values.currency`, position currencies, and multi-currency cash balances), queries `/api/v1/fx` for all required conversions into the selected currency, and converts all figures.
+  - Per-unit prices (`avg_price`, `mark_price`) and raw amounts are formatted with their native currency symbol; portfolio/account aggregate numbers are converted into the intended display currency.
+  - Renders headline KPIs, multi-account pills, precision derivative instrument badges (`FUTURES OPTIONS` styled pill), sortable table, and multi-currency cash balances.
+  - Verified with headless Edge CDP tests connecting to live TWS data (switching USD → HKD → EUR dynamically pulling FX and converting correctly).
 - ✅ Clean scripts in `scripts/`:
   - `start-all` (`.ps1`, `.cmd`, `.sh`): launches backend + desktop app together with clean shutdown on exit.
   - `start-backend` (`.ps1`, `.cmd`, `.sh`): launches FastAPI server only.

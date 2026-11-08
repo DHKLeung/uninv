@@ -614,7 +614,8 @@ td.empty {
   color: #c084fc;
   border-color: rgba(139, 92, 246, 0.3);
 }
-.sec-badge.futures_options {
+.sec-badge.futures_options,
+.sec-badge.futures-options {
   background: rgba(245, 158, 11, 0.15);
   color: #fbbf24;
   border-color: rgba(245, 158, 11, 0.3);

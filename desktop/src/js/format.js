@@ -7,6 +7,12 @@ export const FX_RATES = {
   HKD: 7.8413,
   EUR: 0.8913,
   GBP: 0.7435,
+  JPY: 154.20,
+  CAD: 1.39,
+  AUD: 1.53,
+  CHF: 0.88,
+  CNH: 7.23,
+  SGD: 1.33,
 };
 
 const CURRENCY_SYMBOLS = {
@@ -32,22 +38,39 @@ export function setFxRate(currency, rate) {
 }
 
 /**
- * Convert an amount from fromCurrency to toCurrency via USD base rates.
- * FX_RATES stores 1 USD = rate * Currency (e.g. USD: 1.0, HKD: 7.84, EUR: 0.89).
+ * Convert an amount from fromCurrency to toCurrency using dynamic pair rates or fallbacks.
+ * fxRates is an optional map of {"FROM->TO": rate}.
  */
-export function convertCurrency(amount, fromCurrency = "USD", toCurrency = "USD") {
+export function convertAmount(amount, fromCurrency, toCurrency, fxRates = {}) {
   if (amount === null || amount === undefined || Number.isNaN(amount)) {
     return 0;
   }
-  const fromCcy = (fromCurrency || "USD").toUpperCase();
-  const toCcy = (toCurrency || "USD").toUpperCase();
-  if (fromCcy === toCcy) {
+  const from = (fromCurrency || "USD").toUpperCase();
+  const to = (toCurrency || "USD").toUpperCase();
+  if (from === to) {
     return amount;
   }
-  const fromRate = FX_RATES[fromCcy] ?? 1.0;
-  const toRate = FX_RATES[toCcy] ?? 1.0;
-  // Convert from fromCcy to USD base, then from USD to toCcy
+  // 1. Direct pair match in live rates (e.g. "EUR->HKD")
+  const directKey = `${from}->${to}`;
+  if (fxRates && typeof fxRates[directKey] === "number" && fxRates[directKey] > 0) {
+    return amount * fxRates[directKey];
+  }
+  // 2. Inverted pair match (e.g. 1 / "HKD->EUR")
+  const invKey = `${to}->${from}`;
+  if (fxRates && typeof fxRates[invKey] === "number" && fxRates[invKey] > 0) {
+    return amount / fxRates[invKey];
+  }
+  // 3. Fallback triangulation via USD
+  const fromRate = FX_RATES[from] ?? 1.0;
+  const toRate = FX_RATES[to] ?? 1.0;
   return (amount / fromRate) * toRate;
+}
+
+/**
+ * Backward-compatible helper using FX_RATES table.
+ */
+export function convertCurrency(amount, fromCurrency = "USD", toCurrency = "USD") {
+  return convertAmount(amount, fromCurrency, toCurrency, {});
 }
 
 /**

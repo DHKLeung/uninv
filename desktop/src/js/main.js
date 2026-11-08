@@ -6,6 +6,7 @@
 
 import { apiGet, backendUrl } from "./api.js";
 import {
+  convertAmount,
   convertCurrency,
   esc,
   formatMoney,
@@ -26,11 +27,64 @@ const state = {
   currency: "USD",
   asof: null,
   sort: { key: "market_value", dir: -1 },
+  fxRates: {}, // Map of "FROM->TO" to rate float
 };
 
 // ---------------------------------------------------------------------------------------
-// Data Loading
+// Data Loading & FX Resolution
 // ---------------------------------------------------------------------------------------
+
+/**
+ * Scan all snapshots to discover all non-target currencies present in positions,
+ * cash balances, and account base values, then query /api/v1/fx for every required pair.
+ */
+async function fetchRequiredFxRates(targetCurrency) {
+  const target = (targetCurrency || "USD").toUpperCase();
+  const sourceCurrencies = new Set();
+
+  for (const snap of state.snapshots) {
+    if (snap.account_values?.currency) {
+      sourceCurrencies.add(snap.account_values.currency.toUpperCase());
+    }
+    for (const cb of snap.account_values?.cash_balances ?? []) {
+      if (cb.currency) {
+        sourceCurrencies.add(cb.currency.toUpperCase());
+      }
+    }
+    for (const p of snap.positions ?? []) {
+      if (p.currency) {
+        sourceCurrencies.add(p.currency.toUpperCase());
+      }
+    }
+  }
+
+  const pairsToFetch = [];
+  for (const fromCcy of sourceCurrencies) {
+    if (fromCcy !== target) {
+      const pairKey = `${fromCcy}->${target}`;
+      pairsToFetch.push({ from: fromCcy, to: target, key: pairKey });
+    }
+  }
+
+  if (pairsToFetch.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    pairsToFetch.map(({ from, to, key }) =>
+      apiGet(`/api/v1/fx?base=${encodeURIComponent(from)}&quote=${encodeURIComponent(to)}`)
+        .then((fx) => {
+          state.fxRates[key] = fx.rate;
+          if (fx.rate > 0) {
+            state.fxRates[`${to}->${from}`] = 1.0 / fx.rate;
+          }
+        })
+        .catch((e) => {
+          console.warn(`Could not refresh live FX rate for ${key}:`, e);
+        })
+    )
+  );
+}
 
 async function load() {
   const btn = $("#refresh-btn");
@@ -49,7 +103,7 @@ async function load() {
     );
     const accountResponses = await Promise.all(accountPromises);
 
-    // 3. Prepare snapshot fetch promises
+    // 3. Fetch unified snapshots for each account
     const snapshotPromises = [];
     for (const resp of accountResponses) {
       if (resp.asof) {
@@ -67,34 +121,12 @@ async function load() {
       }
     }
 
-    // 4. Concurrently pull live FX rate for the active display currency
-    let activeFxPromise = Promise.resolve();
-    if (state.currency !== "USD") {
-      activeFxPromise = apiGet(`/api/v1/fx?base=USD&quote=${encodeURIComponent(state.currency)}`)
-        .then((fx) => {
-          setFxRate(state.currency, fx.rate);
-        })
-        .catch((e) => {
-          console.warn(`Could not refresh live FX rate for ${state.currency}:`, e);
-        });
-    }
-
-    // Await both snapshot data AND live FX rate in parallel
-    const [snapshots] = await Promise.all([
-      Promise.all(snapshotPromises),
-      activeFxPromise,
-    ]);
+    const snapshots = await Promise.all(snapshotPromises);
     state.snapshots = snapshots;
 
-    // 5. Asynchronously pre-fetch / warm other major currencies in background
-    const otherCurrencies = ["HKD", "EUR", "GBP"].filter((c) => c !== state.currency);
-    Promise.all(
-      otherCurrencies.map((c) =>
-        apiGet(`/api/v1/fx?base=USD&quote=${encodeURIComponent(c)}`)
-          .then((fx) => setFxRate(c, fx.rate))
-          .catch(() => null)
-      )
-    ).catch(() => null);
+    // 4. Dynamically detect ALL currencies across accounts, positions, and cash,
+    //    then ping /api/v1/fx for every conversion needed into the target currency.
+    await fetchRequiredFxRates(state.currency);
 
     setBackendStatus(true);
     hideError();
@@ -173,33 +205,33 @@ function renderKpis() {
   const filteredSnaps = getFilteredSnapshots();
 
   const netLiqConverted = filteredSnaps.reduce(
-    (acc, s) => acc + convertCurrency(s.account_values?.net_liquidation ?? 0, s.account_values?.currency || "USD", ccy),
+    (acc, s) => acc + convertAmount(s.account_values?.net_liquidation ?? 0, s.account_values?.currency, ccy, state.fxRates),
     0
   );
   const positionValConverted = filteredSnaps.reduce(
-    (acc, s) => acc + convertCurrency(s.account_values?.gross_position_value ?? 0, s.account_values?.currency || "USD", ccy),
+    (acc, s) => acc + convertAmount(s.account_values?.gross_position_value ?? 0, s.account_values?.currency, ccy, state.fxRates),
     0
   );
   const cashValConverted = filteredSnaps.reduce(
-    (acc, s) => acc + convertCurrency(s.account_values?.cash_balance ?? 0, s.account_values?.currency || "USD", ccy),
+    (acc, s) => acc + convertAmount(s.account_values?.cash_balance ?? 0, s.account_values?.currency, ccy, state.fxRates),
     0
   );
   const totalUnrealizedPnlConverted = filteredSnaps.reduce(
-    (acc, s) => acc + convertCurrency(s.account_values?.unrealized_pnl ?? 0, s.account_values?.currency || "USD", ccy),
+    (acc, s) => acc + convertAmount(s.account_values?.unrealized_pnl ?? 0, s.account_values?.currency, ccy, state.fxRates),
     0
   );
   const availFundsConverted = filteredSnaps.reduce(
-    (acc, s) => acc + convertCurrency(s.account_values?.available_funds ?? 0, s.account_values?.currency || "USD", ccy),
+    (acc, s) => acc + convertAmount(s.account_values?.available_funds ?? 0, s.account_values?.currency, ccy, state.fxRates),
     0
   );
   const buyingPowerConverted = filteredSnaps.reduce(
-    (acc, s) => acc + convertCurrency(s.account_values?.buying_power ?? 0, s.account_values?.currency || "USD", ccy),
+    (acc, s) => acc + convertAmount(s.account_values?.buying_power ?? 0, s.account_values?.currency, ccy, state.fxRates),
     0
   );
 
   const totalPositions = getAllFilteredPositions();
   const totalCostBasisConverted = totalPositions.reduce(
-    (acc, p) => acc + convertCurrency(p.cost_basis ?? 0, p.currency || "USD", ccy),
+    (acc, p) => acc + convertAmount(p.cost_basis ?? 0, p.currency, ccy, state.fxRates),
     0
   );
   const totalPnlPct = totalCostBasisConverted !== 0 ? totalUnrealizedPnlConverted / Math.abs(totalCostBasisConverted) : 0;
@@ -242,20 +274,20 @@ function renderAccounts() {
         <div class="account-metrics-grid">
           <div>
             <div class="metric-label">NET LIQUIDATION VALUE</div>
-            <div class="metric-value font-mono strong">${formatMoney(convertCurrency(av.net_liquidation, av.currency, ccy), ccy)}</div>
+            <div class="metric-value font-mono strong">${formatMoney(convertAmount(av.net_liquidation, av.currency, ccy, state.fxRates), ccy)}</div>
           </div>
           <div class="text-right">
             <div class="metric-label">POSITION VALUE</div>
-            <div class="metric-value font-mono">${formatMoney(convertCurrency(av.gross_position_value, av.currency, ccy), ccy)}</div>
+            <div class="metric-value font-mono">${formatMoney(convertAmount(av.gross_position_value, av.currency, ccy, state.fxRates), ccy)}</div>
           </div>
           <div>
             <div class="metric-label">CASH BALANCE</div>
-            <div class="metric-value font-mono ${pnlClass(av.cash_balance)}">${formatMoney(convertCurrency(av.cash_balance, av.currency, ccy), ccy)}</div>
+            <div class="metric-value font-mono ${pnlClass(av.cash_balance)}">${formatMoney(convertAmount(av.cash_balance, av.currency, ccy, state.fxRates), ccy)}</div>
           </div>
           <div class="text-right">
             <div class="metric-label">UNREALISED P&amp;L</div>
             <div class="metric-value font-mono ${pnlClass(av.unrealized_pnl)}">
-              ${formatSignedMoney(convertCurrency(av.unrealized_pnl, av.currency, ccy), ccy)}
+              ${formatSignedMoney(convertAmount(av.unrealized_pnl, av.currency, ccy, state.fxRates), ccy)}
               <span class="metric-pct">(${formatPct(pnlPct, { signed: true })})</span>
             </div>
           </div>
@@ -321,7 +353,7 @@ function renderCashBalances() {
   );
 
   const totalCashConverted = filteredSnaps.reduce(
-    (acc, s) => acc + convertCurrency(s.account_values?.cash_balance ?? 0.0, s.account_values?.currency || "USD", ccy),
+    (acc, s) => acc + convertAmount(s.account_values?.cash_balance ?? 0.0, s.account_values?.currency, ccy, state.fxRates),
     0
   );
 
@@ -348,7 +380,7 @@ function renderCashBalances() {
               ${formatMoney(c.amount, c.currency)}
             </td>
             <td class="num font-mono strong ${pnlClass(c.amount)}">
-              ${formatMoney(convertCurrency(c.amount, c.currency, ccy), ccy)}
+              ${formatMoney(convertAmount(c.amount, c.currency, ccy, state.fxRates), ccy)}
             </td>
           </tr>`;
         })
@@ -383,7 +415,7 @@ function renderPositions() {
   });
 
   const totalFilteredValue = rows.reduce(
-    (acc, p) => acc + convertCurrency(p.market_value ?? 0, p.currency || "USD", ccy),
+    (acc, p) => acc + convertAmount(p.market_value ?? 0, p.currency, ccy, state.fxRates),
     0
   );
   $("#positions-count").textContent = `${rows.length} positions · ${formatMoney(totalFilteredValue, ccy)}`;
@@ -399,7 +431,7 @@ function renderPositions() {
         .map((p) => {
           const expiry = p.last_trade_date ? esc(p.last_trade_date) : '<span class="muted">—</span>';
           const secType = p.sec_type || "STOCKS";
-          const secClass = secType.toLowerCase();
+          const secClass = secType.toLowerCase().replace(/\s+/g, "-");
           const exchangeBadge = p.exchange ? `<span class="exchange-badge">${esc(p.exchange)}</span>` : '<span class="muted">—</span>';
           const pnlPct = p.cost_basis !== 0 ? (p.unrealized_pnl ?? 0) / Math.abs(p.cost_basis) : 0;
 
@@ -419,13 +451,13 @@ function renderPositions() {
             <td class="num font-mono">${formatQty(p.position)}</td>
             <td class="num font-mono">${formatMoney(p.avg_price, p.currency)}</td>
             <td class="num font-mono">${formatMoney(p.mark_price, p.currency)}</td>
-            <td class="num font-mono">${formatMoney(convertCurrency(p.cost_basis, p.currency, ccy), ccy)}</td>
-            <td class="num font-mono strong">${formatMoney(convertCurrency(p.market_value, p.currency, ccy), ccy)}</td>
+            <td class="num font-mono">${formatMoney(convertAmount(p.cost_basis, p.currency, ccy, state.fxRates), ccy)}</td>
+            <td class="num font-mono strong">${formatMoney(convertAmount(p.market_value, p.currency, ccy, state.fxRates), ccy)}</td>
             <td class="num"><span class="currency-badge">${esc(p.currency)}</span></td>
             <td class="num font-mono ${pnlClass(p.unrealized_pnl)}">
               ${
                 p.unrealized_pnl != null
-                  ? `<div>${formatSignedMoney(convertCurrency(p.unrealized_pnl, p.currency, ccy), ccy)}</div>
+                  ? `<div>${formatSignedMoney(convertAmount(p.unrealized_pnl, p.currency, ccy, state.fxRates), ccy)}</div>
                      <div class="small-pct">${formatPct(pnlPct, { signed: true })}</div>`
                   : '<span class="muted">—</span>'
               }
@@ -445,16 +477,8 @@ function wireEvents() {
 
   $("#currency-select").addEventListener("change", async (e) => {
     state.currency = e.target.value;
+    await fetchRequiredFxRates(state.currency);
     render();
-    if (state.currency !== "USD") {
-      try {
-        const fx = await apiGet(`/api/v1/fx?base=USD&quote=${encodeURIComponent(state.currency)}`);
-        setFxRate(state.currency, fx.rate);
-        render();
-      } catch (err) {
-        console.warn("Could not load FX rate:", err);
-      }
-    }
   });
 
   $("#search").addEventListener("input", (e) => {
