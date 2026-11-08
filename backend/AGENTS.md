@@ -4,7 +4,7 @@ Rules for `backend/`. Root `AGENTS.md` applies too.
 
 ## Layout
 - `src/uninv_backend/models.py`: Pydantic models with strict `StrEnum`s (`Currency`, `Exchange`, `SecurityType`, `OptionType`). Defines `AccountsResponse`, `BrokerAccountSnapshot`, `AccountValues`, `Position`, `FxRate`, `SupportingBroker`.
-- `src/uninv_backend/ibkr.py`: Synchronous, thread-safe IBKR connector service (`IBKRService`, `ibkr_service`) wrapping `ib_async`. Connects directly to TWS on port 7496. Provides `get_snapshot`, `get_fx_rate`, and auto-reconnection.
+- `src/uninv_backend/ibkr.py`: Synchronous, thread-safe IBKR connector service (`IBKRService`, `ibkr_service`) wrapping `ib_async` via a dedicated background worker thread and private event loop (`_IBRunner`). Connects directly to TWS on port 7496. Provides `get_snapshot`, `get_fx_matrix`, and auto-reconnection with strict network timeouts.
 - `src/uninv_backend/api/routes.py`: `/api/v1` routes:
   - `GET /api/v1/supporting-brokers`
   - `GET /api/v1/accounts?broker_id=ibkr`: returns `AccountsResponse` with UTC `asof` timestamp.
@@ -15,7 +15,7 @@ Rules for `backend/`. Root `AGENTS.md` applies too.
 
 ## Conventions
 - Python 3.13, full type hints, `X | None`. Ruff: line length 100.
-- Synchronous route handlers (`def` instead of `async def`): FastAPI automatically runs them in a worker threadpool, avoiding event loop conflicts with socket clients.
+- Synchronous route handlers (`def` instead of `async def`): FastAPI automatically runs them in a worker threadpool. The IBKR connector manages its own dedicated event loop runner (`_IBRunner`), completely eliminating thread affinity issues, detached futures, and cross-thread event loop deadlocks.
 - Query parameters are preferred over URL path inline parameters.
 - Standardized broker translation philosophy:
   - Backend absorbs broker complexities, connection protocols, and format discrepancies.

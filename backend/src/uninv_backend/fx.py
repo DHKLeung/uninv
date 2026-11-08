@@ -8,7 +8,7 @@ in-memory caching, and robust fallbacks.
 
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from uninv_backend.models import Currency, FxMatrixResponse
@@ -57,11 +57,74 @@ DEFAULT_USD_RATES: dict[Currency, float] = {
 class FxRouter:
     """Calculates and serves the complete FX exchange rate matrix across all currencies."""
 
-    def __init__(self, cache_ttl_seconds: float = 15.0) -> None:
+    def __init__(self, cache_ttl_seconds: float = 60.0) -> None:
         self.cache_ttl = cache_ttl_seconds
         # In-memory edge cache: (u, v) -> (rate, timestamp)
         self._cache: dict[tuple[Currency, Currency], tuple[float, float]] = {}
         self._cached_matrix: tuple[dict[Currency, dict[Currency, float]], float] | None = None
+
+    def _synthesize_matrix(
+        self,
+        quotes: dict[str, float],
+        query_asof: datetime,
+        now: float,
+        currencies: list[Currency],
+    ) -> FxMatrixResponse:
+        """Synthesize reciprocal and cross-currency rates matrix from probed quotes."""
+        usd_val: dict[Currency, float] = {Currency.USD: 1.0}
+
+        # Foreign/USD pairs (EUR, GBP, AUD, NZD)
+        for foreign_ccy, pair in DIRECT_FOREIGN_USD_PAIRS.items():
+            rate = quotes.get(pair)
+            if rate is not None and rate > 0:
+                usd_val[foreign_ccy] = rate
+            else:
+                usd_val[foreign_ccy] = DEFAULT_USD_RATES[foreign_ccy]
+
+        # USD/Foreign pairs (JPY, CAD, CHF, HKD, CNH, SGD)
+        for foreign_ccy, pair in USD_FOREIGN_PAIRS.items():
+            rate = quotes.get(pair)
+            if rate is not None and rate > 0:
+                usd_val[foreign_ccy] = 1.0 / rate
+            else:
+                usd_val[foreign_ccy] = DEFAULT_USD_RATES[foreign_ccy]
+
+        rates: dict[Currency, dict[Currency, float]] = {}
+        for u in currencies:
+            rates[u] = {}
+            for v in currencies:
+                if u == v:
+                    rates[u][v] = 1.0
+                else:
+                    rate_uv = usd_val[u] / usd_val[v]
+                    rates[u][v] = rate_uv
+                    self._cache[(u, v)] = (rate_uv, now)
+
+        self._cached_matrix = (rates, now)
+        return FxMatrixResponse(asof=query_asof, currencies=currencies, rates=rates)
+
+    async def get_matrix_async(
+        self,
+        batch_probe_fn: Callable[[list[str]], Awaitable[dict[str, float]]],
+        asof: datetime | None = None,
+    ) -> FxMatrixResponse:
+        """Asynchronously construct the complete (N x N) currency conversion matrix."""
+        query_asof = asof or datetime.now(UTC)
+        now = time.time()
+        currencies = list(Currency)
+
+        if self._cached_matrix is not None:
+            cached_rates, cached_ts = self._cached_matrix
+            if now - cached_ts < self.cache_ttl:
+                return FxMatrixResponse(asof=query_asof, currencies=currencies, rates=cached_rates)
+
+        quotes: dict[str, float] = {}
+        try:
+            quotes = await batch_probe_fn(ALL_IDEALPRO_PAIRS) or {}
+        except Exception as e:
+            logger.debug("FX async batch quote probe error: %s", e)
+
+        return self._synthesize_matrix(quotes, query_asof, now, currencies)
 
     def get_matrix(
         self,
@@ -90,41 +153,7 @@ class FxRouter:
         except Exception as e:
             logger.debug("FX batch quote probe error: %s", e)
 
-        # 2. Determine value of 1 unit of each currency in USD
-        usd_val: dict[Currency, float] = {Currency.USD: 1.0}
-
-        # Foreign/USD pairs (EUR, GBP, AUD, NZD)
-        for foreign_ccy, pair in DIRECT_FOREIGN_USD_PAIRS.items():
-            rate = quotes.get(pair)
-            if rate is not None and rate > 0:
-                usd_val[foreign_ccy] = rate
-            else:
-                usd_val[foreign_ccy] = DEFAULT_USD_RATES[foreign_ccy]
-
-        # USD/Foreign pairs (JPY, CAD, CHF, HKD, CNH, SGD)
-        for foreign_ccy, pair in USD_FOREIGN_PAIRS.items():
-            rate = quotes.get(pair)
-            if rate is not None and rate > 0:
-                usd_val[foreign_ccy] = 1.0 / rate
-            else:
-                usd_val[foreign_ccy] = DEFAULT_USD_RATES[foreign_ccy]
-
-        # 3. Construct full (11 x 11) cross-currency rates matrix
-        rates: dict[Currency, dict[Currency, float]] = {}
-        for u in currencies:
-            rates[u] = {}
-            for v in currencies:
-                if u == v:
-                    rates[u][v] = 1.0
-                else:
-                    rate_uv = usd_val[u] / usd_val[v]
-                    rates[u][v] = rate_uv
-                    self._cache[(u, v)] = (rate_uv, now)
-
-        # Cache the calculated matrix
-        self._cached_matrix = (rates, now)
-
-        return FxMatrixResponse(asof=query_asof, currencies=currencies, rates=rates)
+        return self._synthesize_matrix(quotes, query_asof, now, currencies)
 
     def get_rate(
         self,

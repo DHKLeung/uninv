@@ -1,3 +1,4 @@
+import threading
 from datetime import UTC, datetime
 from unittest.mock import patch
 
@@ -421,3 +422,43 @@ def test_fx_router_fallback_on_missing_quote() -> None:
     # Empty market quotes -> uses DEFAULT_USD_RATES fallback
     rate, _ = router.get_rate(Currency.EUR, Currency.USD, lambda pairs: {})
     assert rate == DEFAULT_USD_RATES[Currency.EUR]
+
+
+@pytest.mark.anyio
+async def test_fx_router_async_matrix() -> None:
+    from uninv_backend.fx import FxRouter
+
+    router = FxRouter(cache_ttl_seconds=0.1)
+
+    async def mock_async_probe(pairs: list[str]) -> dict[str, float]:
+        return {"EURUSD": 1.10}
+
+    matrix = await router.get_matrix_async(mock_async_probe)
+    assert matrix.rates[Currency.EUR][Currency.USD] == 1.10
+    assert matrix.rates[Currency.USD][Currency.USD] == 1.0
+
+
+def test_ibkr_service_runner_thread_safety() -> None:
+    from uninv_backend.ibkr import IBKRService
+
+    service = IBKRService(host="127.0.0.1", port=59999, timeout=0.1)
+
+    # Calling from multiple concurrent threads must raise ConnectionError cleanly
+    # without deadlocking or raising event loop errors
+    errors: list[Exception] = []
+
+    def worker() -> None:
+        try:
+            service.get_accounts()
+        except ConnectionError as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=worker) for _ in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=2.0)
+
+    assert len(errors) == 5
+    for err in errors:
+        assert "Could not connect to IBKR TWS" in str(err)

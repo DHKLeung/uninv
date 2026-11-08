@@ -120,7 +120,7 @@ _Last updated: 2026-11-08_
     - Raw numbers: zero rounding in backend; full raw float precision preserved.
   - `AccountValues` model:
     - Account-wide totals (non-BASE, explicit currency): `available_funds`, `buying_power`, `cash_balance`, `cash_balances` (multi-currency list), `equity_with_loan_value`, `excess_liquidity`, `gross_position_value`, `init_margin_req`, `maint_margin_req`, `net_liquidation`, `unrealized_pnl`.
-  - `IBKRService` in `backend/src/uninv_backend/ibkr.py` connects directly to TWS on port 7496 with `readonly=True` (connects in ~0.1s), client ID retry resilience, thread-safe querying via `threading.Lock`, and in-memory contract name/FX caching.
+  - `IBKRService` in `backend/src/uninv_backend/ibkr.py` connects directly to TWS on port 7496 with `readonly=True` (connects in ~0.1s), client ID retry resilience, thread-safe asynchronous dispatch via a dedicated background loop runner (`_IBRunner`), strict network timeouts on Forex batch probes and contract qualification, and in-memory contract name/FX caching (60s TTL).
   - All 22 backend tests pass, Ruff check passes, Tauri `cargo check` passes.
 - ✅ Global Data Pulling & Merged FX Matrix Architecture:
   - Unified `/api/v1/fx` endpoint returns `FxMatrixResponse` containing `asof` timestamp, `currencies` list, and full (11x11) `rates` conversion matrix (`rates[from][to]`).
