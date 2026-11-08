@@ -193,3 +193,121 @@ We implemented explicit contract type inspection using `isinstance(c, (FuturesOp
   $$\text{market\_value} = \text{position} \times \text{market\_price} \times \text{multiplier}$$
   $$\text{unrealized\_pnl} = (\text{market\_price} - \text{average\_price}) \times \text{position} \times \text{multiplier}$$
 - Verified against live account data with exact 0.00 difference against IBKR's internal net liquidation and position values.
+
+---
+
+## Trial 9: FastAPI Threadpool Dispatch vs `ib_async` Stateful TCP Socket (The Silent Event Loop Deadlock)
+
+### The Phenomenon
+The desktop app would load smoothly on initial startup, but clicking the "Refresh" button or triggering concurrent requests would intermittently freeze the backend indefinitely. The HTTP request would enter FastAPI's route handler, but `await ib.accountValuesAsync(...)` or `ib.reqTickersAsync(...)` would never return, resulting in a gateway timeout or a permanently hung browser/desktop view.
+
+### The Initial Misconception (The "Python Singleton" Fallacy)
+A natural assumption when designing the backend was:
+> *"We instantiated `ibkr_service = IBKRService()` as a module-level singleton. It is a single Python object in shared memory. Why can't all FastAPI worker threads simply reuse this connected instance to query TWS?"*
+
+In Python, module-level variables reside in shared heap RAM. Any thread can read the memory address of `ibkr_service` and invoke its methods. However, **an active network connection is not just Python memory: it is an operating system kernel resource bound to an event loop**.
+
+### Technical Root Cause: OS Socket Multiplexing & Event Loop Thread Affinity
+
+1. **How an OS TCP Socket Actually Works:**
+   - A TCP socket is represented by an operating system file descriptor / socket handle (`int`).
+   - When `ib_async` establishes a connection (`await ib.connectAsync(...)`), it registers that socket handle with the OS kernel multiplexer (`select`/IOCP on Windows, `epoll` on Linux, `kqueue` on macOS) **on the specific `asyncio` event loop running on that specific thread**.
+   - The OS kernel will only wake up the thread that executed the kernel polling syscall (`select.select()`, `GetQueuedCompletionStatus()`, or `epoll_wait()`).
+
+2. **FastAPI's Request Dispatching Mechanism:**
+   - In FastAPI, route handlers defined with standard `def` (synchronous functions) are treated as blocking I/O:
+     ```python
+     # ANTI-PATTERN for stateful async socket libraries:
+     @router.get("/snapshot")
+     def get_snapshot(account_id: str):
+         return ibkr_service.get_snapshot(account_id)
+     ```
+   - FastAPI automatically offloads standard `def` routes to an external threadpool (`anyio.to_thread.run_sync()`, typically with 40 worker threads).
+   - Consecutive HTTP requests are arbitrarily assigned to different worker threads: Request 1 $\to$ Thread 1, Request 2 $\to$ Thread 2.
+
+3. **The Step-by-Step Anatomy of the Deadlock:**
+   ```
+   [FastAPI Threadpool Worker 1]          [FastAPI Threadpool Worker 2]          [TWS (Port 7496)]
+                 │                                      │                                │
+      Connects & creates socket                         │                                │
+      Registers socket on Loop 1                        │                                │
+      Loop 1 waits on OS poll (select)                  │                                │
+                 │                                      │                                │
+                 │                          User clicks "Refresh"                        │
+                 │                          Invokes get_snapshot()                       │
+                 │                          Runs on Thread 2                             │
+                 │                                      │                                │
+                 │                          Sends request over shared socket ───────────>│
+                 │                          Creates Future on Loop 2                     │
+                 │                          Thread 2 blocks waiting for Future           │
+                 │                                      │                                │
+                 │                          <── TWS sends response packets ──────────────┘
+                 │                                      │
+   OS delivers packets to Thread 1!                     │
+   Loop 1 wakes up and reads data                       │
+   Loop 1 has no pending request for this data          │
+   Loop 1 tries: future_2.set_result(data)              │
+                 │                                      │
+                 │                           Thread 2 is STILL sleeping!
+                 │                           (set_result alters RAM, but does
+                 │                            NOT issue an OS wakeup syscall
+                 │                            to Thread 2's kernel poll)
+                 │                                      │
+                 ▼                                      ▼
+            [Confused]                        [DEADLOCK / HANGS FOREVER]
+   ```
+
+4. **Why `Future.set_result()` Does Not Wake Up Another Thread's Loop:**
+   - An `asyncio.Future` is a plain Python object. Calling `future.set_result(data)` sets `self._result = data` and appends callbacks to a Python list.
+   - **Crucially, modifying Python RAM does not issue an OS kernel interrupt.**
+   - Thread 2 is suspended inside a blocking OS wait (`select` or Windows completion port). Because Thread 2's kernel polling list has zero registered socket activity, Thread 2's event loop is never woken up by the operating system.
+   - Result: Thread 2 hangs indefinitely waiting for an event loop iteration that never executes.
+
+5. **The Cross-Talk / Socket Corruption Hazard:**
+   - If Thread 2 writes raw bytes to Thread 1's socket, TWS processes the command and returns packets.
+   - Thread 1's socket reader receives packets it never asked for.
+   - Thread 1's protocol state machine becomes confused or out-of-sync, while Thread 2 eventually times out with no response.
+
+---
+
+## Trial 10: The Dedicated Background Runner (`_IBRunner`) — And Why It Was Scrapped for Simplicity
+
+### The Initial Fix Attempt
+To resolve the threadpool contention, we initially constructed an internal worker runner (`_IBRunner`):
+- Spawned a dedicated background daemon thread (`threading.Thread(target=runner_loop, daemon=True)`) hosting a single persistent `asyncio` event loop.
+- Added a `threading.Lock` across all operations.
+- Marshaled all calls from FastAPI worker threads onto this background loop using `asyncio.run_coroutine_threadsafe(coro, runner_loop).result()`.
+
+### Why It Worked Mechanically
+Because all socket creation, reading, writing, and future resolution were restricted exclusively to that single background thread, the cross-thread event loop deadlock was eliminated.
+
+### Why It Was a Code Smell & Anti-Pattern (Fighting the Framework)
+Despite functioning, this approach was a textbook case of **patch-on-patch over-engineering**:
+1. **Redundant Thread Hopping:** FastAPI and Uvicorn already run on a high-performance, native `asyncio` event loop on the main process thread. Running an async framework to dispatch to a threadpool worker, to acquire a lock, to dispatch to a secondary background thread's async loop, and wait on a threadsafe future was needlessly convoluted.
+2. **Maintenance Burden:** Added 280+ lines of threading synchronization, lock management, timeout handlers, and thread lifecycle cleanup code.
+3. **Fragile Serialization:** The coarse `threading.Lock` serialized every broker request, preventing concurrent queries (e.g. fetching account values and market tickers simultaneously).
+
+### The Pivot to Simplicity: Pure Native `async def` Routes
+Instead of wrapping layers of threads and locks around the problem, we deleted `_IBRunner` entirely and aligned with FastAPI's native design:
+- Converted all route handlers in `backend/src/uninv_backend/api/routes.py` to `async def`.
+- Converted all service methods in `backend/src/uninv_backend/ibkr.py` and `fx.py` to `async def`.
+- **How it works:** When FastAPI encounters an `async def` endpoint, it does NOT offload it to a worker threadpool. Instead, it executes it directly on Uvicorn's main `asyncio` event loop.
+- **The Result:** The TCP socket, the route handlers, and the network futures all reside on the exact same loop. Zero thread hops, zero locking primitives, and zero deadlocks. Performance dropped from multi-second lock waits to a crisp **1.4 seconds for a complete portfolio snapshot + 11x11 FX matrix**.
+
+---
+
+## Trial 11: Zero-Cache Architecture & Live Snapshot Integrity
+
+### The Problem with Endpoint Caching
+We previously introduced a 15-second in-memory cache (`_cached_matrix`) in `FxRouter` to minimize redundant TWS Forex requests. However, this introduced a direct violation of user intent:
+- When a user clicks **"Refresh"**, the explicit expectation is to query the brokers and capture a **100% fresh, live, real-time snapshot** of all positions, prices, and exchange rates.
+- Caching caused the UI to display stale exchange rates, created visual discrepancies between raw asset prices and converted totals, and masked recent order executions.
+
+### The Solution
+1. **Complete Removal of Caching:** All in-memory snapshot and FX matrix caches were purged from the backend. Every refresh request fetches fresh live market quotes and ledger totals.
+2. **Strict Network Timeouts (`asyncio.wait_for`):**
+   - Live network queries to brokers can stall if the broker daemon is busy or a specific ticker is illiquid.
+   - We wrapped external TWS queries in strict timeouts:
+     - **3.0s timeout** for batch Forex tickers (`ib.reqTickersAsync`).
+     - **4.0s timeout** for derivative contract qualifications (`ib.qualifyContractsAsync`).
+   - If a specific quote or edge fails to resolve within the timeout window, the system falls back gracefully (e.g., computing synthetic cross-rates or returning unpriced positions) rather than hanging the entire application.

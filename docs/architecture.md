@@ -23,30 +23,59 @@ arbitrary URLs.
 
 ## 2. Shared models are the contract
 
-`backend/src/uninv_backend/models.py` defines `Account`, `Position`, `PositionGroup` and the
-`PortfolioSummary` response. Broker connectors convert their broker's data into these models.
-Nothing downstream knows which broker the data came from. The Rust layer passes JSON through
-untouched, so the models are defined once, in Python.
+`backend/src/uninv_backend/models.py` is the single source of truth for all data shapes across
+brokers:
 
-## 3. Broker connectors are pluggable
+- **Strict Enums for Loud Failure:** `Currency`, `Exchange`, `SecurityType`, and `OptionType`.
+  When an unsupported exchange, currency, or asset class is encountered, it fails loudly and
+  visibly during validation rather than passing corrupt or unhandled data downstream.
+- **Unified Snapshot Models:**
+  - `AccountsResponse`: broker ID, UTC `asof` timestamp, and list of account IDs.
+  - `BrokerAccountSnapshot`: unified financial overview (`AccountValues`), holdings (`Position` list),
+    and UTC `asof` timestamp.
+  - `AccountValues`: account-wide non-BASE financial ledger (cash balances, net liquidation, margin
+    requirements, buying power, unrealized P&L).
+  - `Position`: standardized instrument fields (`instrument`, `symbol`, `avg_price`, `mark_price`,
+    `cost_basis`, `market_value`, `unrealized_pnl`, `multiplier`, `sec_type`, `option_type`, `last_trade_date`).
+  - `FxMatrixResponse`: supported currencies list, UTC `asof` timestamp, and full (11x11) rates matrix.
+- **Normalization with `UninvModel`:** Every string is automatically stripped and internal double-spaces
+  (e.g., OCC option symbols like `"NVDA  290119C00145000"`) are collapsed to single spaces.
+- **Raw Numerical Precision:** Zero rounding in the backend. All prices, quantities, and cash totals preserve
+  full raw float precision. Rounding is strictly a GUI presentation concern.
+- The Rust shell passes JSON payloads through untouched (`serde_json::Value`).
 
-`BrokerConnector` (`brokers/base.py`) is an async interface. `PortfolioService` queries all
-connectors concurrently. **If one broker fails, the rest of the portfolio still loads.** The
-failure is reported in `PortfolioSummary.errors` and shown as a banner in the UI.
+## 3. Pluggable broker connectors & standardized feeds
 
-Today `brokers/mock.py` provides simulated IBKR, Futu and Schwab connectors. The test data
-covers:
+The backend completely abstracts broker-specific connection protocols, authentication quirks,
+and feed discrepancies into standard RESTful endpoints:
 
-- multiple accounts per broker (Schwab IRA + brokerage),
-- multi-currency (HKD account at Futu holding a USD stock),
-- the same symbol at two brokers (MSFT at IBKR and Schwab), which shows consolidation,
-- options with a contract multiplier (AAPL call).
+- `GET /api/v1/supporting-brokers`: list of configured brokers.
+- `GET /api/v1/accounts?broker_id={id}`: active accounts for the broker.
+- `GET /api/v1/snapshot?broker_id={id}&account_id={id}`: live account snapshot.
 
-## 4. Base currency and FX
+**Zero-Cache Guarantee:** Snapshot endpoints never cache broker data in-memory. Every refresh request
+queries the live broker daemon to capture an authentic, 100% real-time snapshot of account values and holdings.
+External network calls are guarded by strict asynchronous timeouts (e.g., 3–4 seconds) to guarantee the backend
+remains responsive even if a broker daemon is busy.
 
-All totals are converted into `UNINV_BASE_CURRENCY` (default USD) through an `FxProvider`.
-For now `StaticFxProvider` uses hardcoded rates; replace it with a live source later.
-Positions keep their native currency values as well, and the UI shows both.
+## 4. Global data pulling & FX matrix architecture
+
+Converting multi-currency holdings across different broker accounts requires a robust, zero-latency
+currency conversion layer:
+
+- **Unified FX Matrix (`/api/v1/fx`):** Instead of requesting individual currency pairs on demand, the backend
+  returns a full 11x11 conversion matrix (`rates[from_currency][to_currency]`) covering all 11 supported
+  currencies (`USD`, `HKD`, `EUR`, `GBP`, `JPY`, `CAD`, `AUD`, `CHF`, `CNH`, `SGD`, `NZD`).
+- **Graph-Based Pathfinding (`FxRouter`):** Direct exchange rates are fetched from IBKR IDEALPRO. An in-memory
+  Breadth-First Search (BFS) graph router automatically synthesizes reciprocal rates (`1 / rate`) and multi-hop
+  cross-rates (e.g. `CAD` $\to$ `USD` $\to$ `EUR`) for missing pairs.
+- **Decoupled FX Engine:** Currently, TWS acts as the live FX pricing engine for the entire application.
+  The FX interface is decoupled from broker connectors: future FX providers (such as an external REST API,
+  Futu FX, or a central bank feed) can plug into `FxRouter` by simply satisfying the matrix interface,
+  without touching any UI code or broker models.
+- **Global Pull & Instant Client-Side Switching:** The frontend pulls broker snapshots and the FX matrix
+  together on load/refresh, fixing the dataset in memory. Switching the display currency in the headbar
+  recalculates all portfolio metrics instantly client-side with **zero additional network calls**.
 
 ## 5. Groups
 
@@ -80,6 +109,52 @@ uninv supports **Windows, macOS, and Linux**:
 - **Why Client Portal Gateway Was Discarded:** IBKR rolled out mandatory passkeys on user accounts, but failed to update their legacy Client Portal Web API gateway (`clientportal.gw`) login page to support WebAuthn / Passkeys. This completely locks out passkey-enabled users. In contrast, standalone IB Gateway natively handles passkeys on the OS desktop.
 - **Socket Interfaces:** Once authenticated, gateways expose local TCP socket APIs (`127.0.0.1:4001` for IB Gateway, `127.0.0.1:11111` for Futu OpenD). The `uninv` Python backend connects asynchronously using `ib_async` and `futu-api`.
 - **Cross-Platform CI Matrix:** Tested on `windows-latest`, `macos-latest`, and `ubuntu-latest` for both the Python FastAPI backend and the Tauri 2 desktop shell.
+
+## 9. Asyncio Event Loop & Threading Architecture (Single Loop vs Threadpool Coexistence)
+
+Understanding Python's event loop and FastAPI's threadpool dispatching is critical when integrating
+different broker SDKs:
+
+```
+                            ┌──────────────────────────────────────────────┐
+                            │            FastAPI (Uvicorn Process)          │
+                            └──────────────────────┬───────────────────────┘
+                                                   │
+                        ┌──────────────────────────┴──────────────────────────┐
+                        │                                                     │
+           [async def route handlers]                             [def route handlers]
+                        │                                                     │
+                        ▼                                                     ▼
+        ┌───────────────────────────────┐                     ┌───────────────────────────────┐
+        │   Uvicorn Main Event Loop     │                     │     AnyIO Threadpool Worker   │
+        │       (Single Thread)         │                     │     (Dedicated OS Thread)     │
+        ├───────────────────────────────┤                     ├───────────────────────────────┤
+        │ - Handles /snapshot (IBKR)    │                     │ - Handles /snapshot (Futu)    │
+        │ - Handles /fx (TWS batch)     │                     │ - Runs blocking futu-api SDK  │
+        │ - Holds stateful TCP socket   │                     │ - Blocks only its own thread  │
+        │ - Zero thread hops or locks   │                     │ - Never blocks main loop      │
+        └───────────────────────────────┘                     └───────────────────────────────┘
+```
+
+1. **Native `async def` for Stateful Async Sockets (`ib_async`):**
+   - An OS TCP socket registered in an `asyncio` event loop has **strict thread affinity** with that loop.
+   - Route handlers that interact with `ib_async` (`/api/v1/snapshot?broker_id=ibkr`, `/api/v1/fx`) are declared as `async def`.
+   - FastAPI executes `async def` routes directly on Uvicorn's main thread and primary event loop.
+   - Sockets, request futures, and responses all resolve on this single loop. This completely avoids cross-thread socket deadlocks without needing custom locks or background worker threads.
+
+2. **Standard `def` for Blocking Synchronous SDKs (`futu-api`):**
+   - Certain broker SDKs (such as Futubull's `futu-api`) are inherently synchronous and blocking.
+   - When integrating synchronous broker SDKs, their route handlers should be declared with standard `def`:
+     ```python
+     @router.get("/snapshot")
+     def get_futu_snapshot(account_id: str):
+         # FastAPI automatically runs this in an anyio worker thread
+         return futu_service.get_snapshot(account_id)
+     ```
+   - FastAPI automatically routes standard `def` handlers to its threadpool. The blocking calls will run safely on a background thread without starving Uvicorn's main event loop or interfering with `ib_async`.
+
+3. **Simplicity Over Scaffolding:**
+   - Rather than wrapping libraries in custom thread runners (`_IBRunner`) or threading locks, the architecture lets FastAPI's native routing semantics (`async def` vs `def`) handle the execution context cleanly and idiomatic to Python.
 
 ## Repo evolution guideline
 
