@@ -130,8 +130,8 @@ _Last updated: 2026-11-08_
   - Renders headline KPIs, multi-account pills, precision derivative instrument badges (`FUTURES OPTIONS` styled pill), sortable table, and multi-currency cash balances.
   - Verified with headless Edge CDP tests connecting to live TWS data (switching USD → JPY → CAD → CHF dynamically pulling FX through graph routing and converting correctly).
 - ✅ Clean scripts in `scripts/`:
-  - `start-all` (`.ps1`, `.cmd`, `.sh`): launches backend + desktop app together with clean shutdown on exit.
-  - `start-backend` (`.ps1`, `.cmd`, `.sh`): launches FastAPI server only.
+  - `start-all` (`.ps1`, `.cmd`, `.sh`): launches backend + desktop app together with clean shutdown on exit. Uses `/health` verification and `-State Listen` TCP checks to prevent false-positive skips caused by Windows `TIME_WAIT` sockets.
+  - `start-backend` (`.ps1`, `.cmd`, `.sh`): launches FastAPI server only with auto-cleanup of unresponsive listeners on port 8000.
   - `start-desktop` (`.ps1`, `.cmd`, `.sh`): launches Tauri desktop app (or `-Browser` mode).
 - ✅ Standalone Broker Daemon Architecture:
   - TWS verified and connected via socket API on port 7496.

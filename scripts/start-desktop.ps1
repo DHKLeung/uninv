@@ -24,8 +24,15 @@ Write-Host "==========================================================" -Foregro
 Write-Host "  UNINV: Starting Desktop Application" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-# Check backend status
-$backendActive = (Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue) -ne $null
+# Check backend status via health check
+$backendActive = $false
+try {
+    $resp = Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -TimeoutSec 2 -ErrorAction Stop
+    $backendActive = ($resp.status -eq "ok")
+} catch {
+    $backendActive = (Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue) -ne $null
+}
+
 if (-not $backendActive) {
     Write-Host "[Warning] Backend is not running on http://127.0.0.1:8000." -ForegroundColor Yellow
     Write-Host "          Start it in another terminal with .\scripts\start-backend.ps1" -ForegroundColor Yellow

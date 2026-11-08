@@ -29,34 +29,65 @@ Write-Host "  UNINV: Starting Backend + Desktop Application" -ForegroundColor Cy
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 try {
-    # 1. Check Broker Gateways
-    $twsActive = (Get-NetTCPConnection -LocalPort 7496 -ErrorAction SilentlyContinue) -ne $null
+    # 1. Check Broker Gateways (only active listeners)
+    $twsActive = (Get-NetTCPConnection -LocalPort 7496 -State Listen -ErrorAction SilentlyContinue) -ne $null
     if ($twsActive) {
         Write-Host "[IBKR] TWS Live socket detected on port 7496" -ForegroundColor Green
     } else {
         Write-Host "[IBKR] Notice: TWS not detected on port 7496 (launch TWS anytime)" -ForegroundColor Yellow
     }
 
-    # 2. Start Backend if not already running
-    $backendPortActive = (Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue) -ne $null
-    if ($backendPortActive) {
+    # 2. Check if Backend is already active and healthy
+    function Test-BackendHealth {
+        try {
+            $resp = Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -TimeoutSec 2 -ErrorAction Stop
+            return ($resp.status -eq "ok")
+        } catch {
+            return $false
+        }
+    }
+
+    if (Test-BackendHealth) {
         Write-Host "[Backend] FastAPI server already running on http://127.0.0.1:8000" -ForegroundColor Green
     } else {
+        # Clean up any orphaned process holding port 8000 in Listen state
+        $listeners = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
+        if ($listeners) {
+            foreach ($l in $listeners) {
+                if ($l.OwningProcess -gt 0) {
+                    Write-Host "[Backend] Terminating unresponsive process holding port 8000 (PID: $($l.OwningProcess)) ..." -ForegroundColor Yellow
+                    taskkill /PID $l.OwningProcess /T /F *> $null
+                }
+            }
+            Start-Sleep -Milliseconds 500
+        }
+
+        # Resolve uv executable path
+        $uvCmd = (Get-Command uv -ErrorAction SilentlyContinue).Source
+        if (-not $uvCmd) {
+            if (Test-Path "$env:USERPROFILE\.local\bin\uv.exe") {
+                $uvCmd = "$env:USERPROFILE\.local\bin\uv.exe"
+            } else {
+                $uvCmd = "uv"
+            }
+        }
+
         Write-Host "[Backend] Starting FastAPI server on http://127.0.0.1:8000 ..." -ForegroundColor Cyan
         $backendProc = Start-Process -PassThru -NoNewWindow -WorkingDirectory "$root\backend" `
-            -FilePath "uv" -ArgumentList "run", "uninv-backend", "--reload"
+            -FilePath $uvCmd -ArgumentList "run", "uninv-backend", "--reload"
         
         # Wait up to 10 seconds for backend health check
         $healthy = $false
         for ($i = 0; $i -lt 20; $i++) {
             Start-Sleep -Milliseconds 500
-            try {
-                $resp = Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -TimeoutSec 1 -ErrorAction SilentlyContinue
-                if ($resp.status -eq "ok") {
-                    $healthy = $true
-                    break
-                }
-            } catch {}
+            if ($backendProc.HasExited) {
+                Write-Host "[Backend] Error: Process exited early with code $($backendProc.ExitCode)!" -ForegroundColor Red
+                break
+            }
+            if (Test-BackendHealth) {
+                $healthy = $true
+                break
+            }
         }
 
         if ($healthy) {
