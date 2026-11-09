@@ -27,9 +27,18 @@ def main() -> None:
     parser.add_argument("--reload", action="store_true", help="auto-reload on code changes (dev)")
     args = parser.parse_args()
 
-    uvicorn.run(
-        "uninv_backend.app:app",
-        host=args.host,
-        port=args.port,
-        reload=args.reload,
-    )
+    if args.reload:
+        uvicorn.run(
+            "uninv_backend.app:app",
+            host=args.host,
+            port=args.port,
+            reload=True,
+        )
+    else:
+        from uninv_backend.app import app
+
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+        )

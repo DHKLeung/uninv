@@ -3,5 +3,8 @@
   "identifier": "default",
   "description": "Permissions for the main window. Our own commands (api_get, backend_url) are always allowed; this only covers Tauri's built-in APIs.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "shell:default"
+  ]
 }

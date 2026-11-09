@@ -241,3 +241,17 @@ _Last updated: 2026-11-09_
   - Standardized `scripts/install-build-tools.bat` to `scripts/install-build-tools.cmd` for consistent `.cmd` script naming.
   - Removed orphaned and unreferenced asset `desktop/app-icon.png`.
   - Cleaned up obsolete `FxRate` model and legacy `Broker` alias in `backend/src/uninv_backend/models.py`.
+
+- ✅ v1.1.0 Sidecar Architecture, Production Installers & GitHub Release Automation:
+  - Implemented standalone Python backend sidecar:
+    - Added PyInstaller build pipeline with entrypoint `backend/entrypoint.py` supporting frozen execution.
+    - Added `scripts/build-all.ps1` and `scripts/build-all.cmd` to automate PyInstaller backend compilation and Tauri installer packaging in one click.
+    - Configured `externalBin: ["binaries/uninv-backend"]` in `desktop/src-tauri/tauri.conf.json`.
+    - Integrated `tauri-plugin-shell` in `desktop/src-tauri/src/lib.rs` to automatically manage the sidecar lifecycle: detects if port 7541 is already running (e.g. dev mode), spawns `uninv-backend` if not, polls until port 7541 is listening before window interaction, and cleanly terminates the child process on window exit.
+  - Built Windows release installers:
+    - Successfully compiled `desktop/src-tauri/target/release/bundle/nsis/uninv_1.1.0_x64-setup.exe` (NSIS Installer, 61.20 MiB).
+    - Successfully compiled `desktop/src-tauri/target/release/bundle/msi/uninv_1.1.0_x64_en-US.msi` (WiX Windows Installer, 62.74 MiB).
+  - Cross-platform release automation via GitHub Actions:
+    - Added `.github/workflows/release.yml` targeting `windows-latest` (NSIS `.exe` + `.msi`), `macos-latest` (`.dmg`), and `ubuntu-22.04` (`.deb` + `.AppImage`).
+    - Compiles the Python backend on each OS cloud runner via PyInstaller, feeds the host target triple sidecar binary to Tauri, and publishes all release assets to GitHub Releases upon tag push (`v*`) or manual `workflow_dispatch`.
+  - Generated full release notes in `RELEASE_v1.1.0.md` detailing all inaugural features across brokers, architecture, FX matrix, portfolio boards, and gateway connectivity.

@@ -14,6 +14,8 @@ backend/build/
 # Rust / Tauri
 target/
 desktop/src-tauri/gen/schemas/
+desktop/src-tauri/binaries/
+*.spec
 
 
 # Jupyter

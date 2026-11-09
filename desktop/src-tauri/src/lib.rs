@@ -18,13 +18,26 @@
 //! - `?` after an expression means "if this failed, return the error right away".
 //! - `.map_err(|e| ...)` turns one error type into another (here, into a readable string).
 
-use std::sync::RwLock;
+use std::net::{SocketAddr, TcpStream};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use serde_json::Value;
+use tauri_plugin_shell::process::CommandChild;
+use tauri_plugin_shell::ShellExt;
 
 /// Default backend address; override with the `UNINV_BACKEND_URL` environment variable.
 const DEFAULT_BACKEND_URL: &str = "http://127.0.0.1:7541";
+
+/// Check if the backend is already listening on 127.0.0.1:7541.
+fn is_backend_listening() -> bool {
+    let addr: Result<SocketAddr, _> = "127.0.0.1:7541".parse();
+    if let Ok(addr) = addr {
+        TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
+    } else {
+        false
+    }
+}
 
 /// Shared state, created once at startup and handed to commands by Tauri.
 struct Backend {
@@ -146,9 +159,52 @@ fn set_backend_url(url: String, backend: tauri::State<'_, Backend>) -> Result<()
 /// App entry point, called from `main.rs` (or mobile runtime).
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let sidecar_child: Arc<Mutex<Option<CommandChild>>> = Arc::new(Mutex::new(None));
+    let sidecar_child_clone = sidecar_child.clone();
+
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
         .manage(Backend::from_env())
-        // Register every command the UI may call here.
+        .setup(move |app| {
+            // If backend is already running (e.g. dev mode), do not start another instance
+            if !is_backend_listening() {
+                match app.shell().sidecar("uninv-backend") {
+                    Ok(command) => match command.spawn() {
+                        Ok((_rx, child)) => {
+                            eprintln!("[uninv] Spawned Python backend sidecar");
+                            *sidecar_child_clone.lock().unwrap() = Some(child);
+
+                            // Poll until backend is ready (up to 15s)
+                            for _ in 0..30 {
+                                std::thread::sleep(Duration::from_millis(500));
+                                if is_backend_listening() {
+                                    eprintln!("[uninv] Python backend is listening on port 7541");
+                                    std::thread::sleep(Duration::from_millis(200));
+                                    break;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[uninv] Failed to spawn sidecar: {e}");
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("[uninv] Sidecar not found or not configured: {e}");
+                    }
+                }
+            } else {
+                eprintln!("[uninv] Backend already listening on port 7541");
+            }
+            Ok(())
+        })
+        .on_window_event(move |_window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                if let Some(child) = sidecar_child.lock().unwrap().take() {
+                    eprintln!("[uninv] Terminating sidecar process on app exit");
+                    let _ = child.kill();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             api_get,
             api_post,
