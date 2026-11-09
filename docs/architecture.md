@@ -117,9 +117,9 @@ supports that by setting `build.devUrl` / `beforeDevCommand` in `tauri.conf.json
 
 uninv supports **Windows, macOS, and Linux**:
 
-- **Standalone Broker Daemons:** Broker gateways (such as **IB Gateway** from Interactive Brokers and **OpenD** from Futu) run as standalone applications on the host machine. This gives users full native support for modern biometric passkeys (Windows Hello, Apple Touch ID), hardware FIDO2 keys, and 2FA prompts during login.
-- **Why Client Portal Gateway Was Discarded:** IBKR rolled out mandatory passkeys on user accounts, but failed to update their legacy Client Portal Web API gateway (`clientportal.gw`) login page to support WebAuthn / Passkeys. This completely locks out passkey-enabled users. In contrast, standalone IB Gateway natively handles passkeys on the OS desktop.
-- **Socket Interfaces:** Once authenticated, gateways expose local TCP socket APIs (`127.0.0.1:4001` for IB Gateway, `127.0.0.1:11111` for Futu OpenD). The `uninv` Python backend connects asynchronously using `ib_async` and `futu-api`.
+- **Standalone Broker Daemons:** Broker gateways (such as **Trader Workstation / TWS** from Interactive Brokers and **OpenD** from Futu) run as standalone applications on the host machine. This gives users full native support for modern biometric passkeys (Windows Hello, Apple Touch ID, QR code login for iPhone/Android Face ID), hardware FIDO2 keys, and 2FA prompts during login.
+- **Why TWS is Enforced:** IBKR rolled out mandatory passkeys on user accounts. Client Portal Gateway (`clientportal.gw`) lacks WebAuthn support, and standalone IB Gateway has recurring WebAuthn/Passkey bugs on Windows. In contrast, **Trader Workstation (TWS)** provides built-in QR code authentication that works seamlessly with mobile passkeys and Face ID.
+- **Socket Interfaces:** Once authenticated, gateways expose local TCP socket APIs (`127.0.0.1:7496` for TWS, `127.0.0.1:11111` for Futu OpenD). The `uninv` Python backend connects asynchronously using `ib_async` and `futu-api`.
 - **Cross-Platform CI Matrix:** Tested on `windows-latest`, `macos-latest`, and `ubuntu-latest` for both the Python FastAPI backend and the Tauri 2 desktop shell.
 
 ## 9. Asyncio Event Loop & Threading Architecture (Single Loop vs Threadpool Coexistence)

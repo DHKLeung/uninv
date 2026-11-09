@@ -4,7 +4,7 @@ Rules for `backend/`. Root `AGENTS.md` applies too.
 
 ## Layout
 - `src/uninv_backend/models.py`: Pydantic models with strict `StrEnum`s (`Currency`, `Exchange`, `SecurityType`, `OptionType`). Defines `AccountsResponse`, `BrokerAccountSnapshot`, `AccountValues`, `Position`, `FxMatrixResponse`, `SupportingBroker`, `BrokerGatewayConfig`, `BrokerGatewayConfigRequest`, `BrokerGatewayConfigResponse`, `BrokerConnectionTestResponse`. Single source of truth for data shapes.
-- `src/uninv_backend/ibkr.py`: Pure async IBKR connector service (`IBKRService`, `ibkr_service`) wrapping `ib_async` natively on the main asyncio event loop. Connects directly to TWS on port 7496 or IB Gateway on port 4001. Provides `get_snapshot`, `get_fx_matrix`, and auto-reconnection with strict network timeouts.
+- `src/uninv_backend/ibkr.py`: Pure async IBKR connector service (`IBKRService`, `ibkr_service`) wrapping `ib_async` natively on the main asyncio event loop. Connects directly to Trader Workstation (TWS) on port 7496. Provides `get_snapshot`, `get_fx_matrix`, and auto-reconnection with strict network timeouts.
 - `src/uninv_backend/futu.py`: Futu meta-broker connector service (`FutuService`, `futu_service`) wrapping `futu-api`. Connects to OpenD on port 11111 with fast TCP pre-flight socket probing, daemon thread configuration, multi-context traversal (Securities, Futures, Crypto), and zero-cache live snapshot queries.
 - `src/uninv_backend/fx.py`: `FxRouter` service calculating and serving the complete 11×11 FX exchange rate matrix across all currencies with graph-based cross-rate synthesis.
 - `src/uninv_backend/api/routes.py`: `/api/v1` routes:

@@ -24,7 +24,7 @@ Manage Host/IP and TCP ports for each broker gateway with live socket and handsh
 ## Key Features
 
 - **Multi-Broker & Meta-Broker Aggregation:**
-  - **Interactive Brokers (IBKR):** Connects to TWS or IB Gateway via `ib_async` on port 7496/4001, pulling live account margins, cash balances, and positions across equities, options, and futures options with OCC instrument parsing.
+  - **Interactive Brokers (IBKR):** Connects directly to Trader Workstation (TWS) via `ib_async` on port 7496, pulling live account margins, cash balances, and positions across equities, options, and futures options with OCC instrument parsing.
   - **Futu / Moomoo Meta-Broker:** Connects to Futu OpenD on port 11111 via `futu-api`. Ingests accounts at the **Universal Account** level (`uni_card_num`), consolidating sub-accounts across all trade contexts (Securities, Futures, Crypto) and corporate entities (Futubull HK, Moomoo US, Futu SG, etc.).
 - **Unidirectional Reactive Portfolio UI:**
   - **Accounts Selector:** Horizontal account tiles. Selecting "All Accounts" presents consolidated figures; selecting an individual account tile filters metrics and holdings to that specific account.
@@ -55,7 +55,7 @@ Manage Host/IP and TCP ports for each broker gateway with live socket and handsh
 flowchart LR
     subgraph Host["Host Operating System"]
         subgraph Gateways["Standalone Broker Daemons"]
-            IBGW["Interactive Brokers<br/>TWS :7496 / IB Gateway :4001<br/>(Passkey / 2FA / WebAuthn)"]
+            IBGW["Interactive Brokers<br/>Trader Workstation (TWS) :7496<br/>(Passkey / Face ID / 2FA)"]
             FUTU["Futu OpenD :11111<br/>(Futubull / Moomoo Auth)"]
         end
 
@@ -92,7 +92,7 @@ Before launching `uninv`, set up the broker daemons you use:
 
 | Broker Gateway | Supported Platforms | Default Port | Setup Documentation |
 |---|---|---|---|
-| **Interactive Brokers (TWS / IB Gateway)** | Windows, macOS, Linux | `7496` (TWS) / `4001` (IB Gateway) | [IB Gateway Setup Instruction](gateways/ib_gateway/instruction.md) |
+| **Interactive Brokers (Trader Workstation / TWS)** | Windows, macOS, Linux | `7496` | [TWS Setup Instruction](gateways/tws/instruction.md) |
 | **Futu OpenD (Futubull / Moomoo)** | Windows, macOS, Linux | `11111` | [Futu OpenD Setup Instruction](gateways/futu_gateway/instruction.md) |
 
 *(Note: `uninv` works with one or both brokers active. If a gateway is offline, `uninv` cleanly marks it as unavailable while continuing to display data from any connected brokers).*
@@ -107,7 +107,7 @@ Before launching `uninv`, set up the broker daemons you use:
 | [Rust](https://rustup.rs/) | Compiles the Tauri desktop shell | `winget install Rustlang.Rustup` |
 | MSVC C++ Build Tools | Linker for Rust on Windows | `scripts\install-build-tools.cmd` or `winget install Microsoft.VisualStudio.2022.BuildTools --override "--passive --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"` |
 | WebView2 | System webview renderer | Pre-installed on Windows 10/11 |
-| Broker Gateways | Live account feeds | [IB Gateway / TWS](gateways/ib_gateway/instruction.md) & [Futu OpenD](gateways/futu_gateway/instruction.md) |
+| Broker Gateways | Live account feeds | [Interactive Brokers TWS](gateways/tws/instruction.md) & [Futu OpenD](gateways/futu_gateway/instruction.md) |
 
 ---
 
@@ -232,7 +232,10 @@ uninv/
 │   ├── images/                    # UI showcase screenshots
 │   ├── architecture.md            # Architecture decision records
 │   └── trials_and_errors.md       # Technical trials & post-mortem notes
-├── gateways/                      # Setup instructions for IB Gateway & Futu OpenD
+├── gateways/                      # Setup instructions for Trader Workstation (TWS) & Futu OpenD
+│   ├── tws/                       # Interactive Brokers TWS instruction & verification
+│   ├── futu_gateway/              # Futu OpenD instruction & verification
+│   └── README.md                  # Broker gateway philosophy and architecture
 ├── scripts/                       # Cross-platform startup scripts (Windows, macOS, Linux)
 └── AGENTS.md                      # AI coding agent operational guidance & project status
 ```

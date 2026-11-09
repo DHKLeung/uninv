@@ -16,7 +16,7 @@ strategy builder, live prices, etc. (roadmap in `README.md`).
   accounts metadata and positions. → see `backend/AGENTS.md`
 - `desktop/`: **Tauri 2** app (16:9 1600x900 default). `src/` = plain HTML/CSS/JS UI (no Node, no bundler);
   `src-tauri/` = thin Rust shell. → see `desktop/AGENTS.md`
-- `gateways/`: Documentation and setup guides for external broker daemons (`gateways/ib_gateway/instruction.md`). Broker gateways run standalone on the host OS.
+- `gateways/`: Documentation and setup guides for external broker daemons (`gateways/tws/instruction.md`, `gateways/futu_gateway/instruction.md`). Broker gateways run standalone on the host OS.
 - `docs/architecture.md`: design decisions and the reasons for them. Update it when a decision
   changes.
 - `docs/trials_and_errors.md`: log of technical trials, dead ends, and why specific approaches failed.
@@ -32,7 +32,7 @@ FastAPI.
 
 **Cross-platform: Windows, macOS, and Linux (Ubuntu).**
 - **Desktop:** Tauri 2 desktop shell using native webviews (WebView2 on Windows, WebKit on macOS, WebKitGTK on Linux); Python backend runs locally (sidecar).
-- **Broker Gateways:** Standalone daemons (IB Gateway on ports 4001/7496, Futu OpenD on port 11111) run natively on the host OS, handling passkey/2FA authentication independently. `uninv` connects locally via socket APIs (`ib_async`, `futu-api`).
+- **Broker Gateways:** Standalone daemons (Trader Workstation / TWS on port 7496, Futu OpenD on port 11111) run natively on the host OS, handling passkey/2FA authentication independently. `uninv` connects locally via socket APIs (`ib_async`, `futu-api`).
 - **CI Matrix:** Automated via GitHub Actions (`.github/workflows/ci.yml`) on `windows-latest`, `macos-latest`, and `ubuntu-latest` for both Python backend (tests/lint) and Tauri Rust shell (`cargo check`).
 
 ## The user
@@ -145,7 +145,7 @@ _Last updated: 2026-11-09_
   - `start-desktop` (`.ps1`, `.cmd`, `.sh`): launches Tauri desktop app (or `-Browser` mode).
 - ✅ Standalone Broker Daemon Architecture:
   - TWS verified and connected via socket API on port 7496.
-  - Cross-platform runners and setup guides documented in `gateways/ib_gateway/instruction.md` and `docs/trials_and_errors.md`.
+  - Cross-platform runners and setup guides documented in `gateways/tws/instruction.md` and `docs/trials_and_errors.md`.
 - ✅ Futubull Integration via `futu-api` (Futu OpenD):
   - Added official `futu-api` package (v10.12.7208).
   - Built `backend/src/uninv_backend/futu.py` (`FutuService`, `futu_service`) connecting to Futu OpenD on port 11111 with fast TCP socket pre-flight probing (`is_opend_available`), preventing `futu-api`'s infinite reconnect loop when OpenD is offline.

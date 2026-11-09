@@ -683,12 +683,12 @@ def test_broker_gateway_config_endpoints(client: TestClient) -> None:
     # 2. POST update ibkr host and port
     resp = client.post(
         "/api/v1/broker-gateway-config",
-        json={"broker_id": "ibkr", "host": "192.168.1.50", "port": 4001},
+        json={"broker_id": "ibkr", "host": "192.168.1.50", "port": 7497},
     )
     assert resp.status_code == 200
     data = resp.json()
     assert data["gateways"]["ibkr"]["host"] == "192.168.1.50"
-    assert data["gateways"]["ibkr"]["port"] == 4001
+    assert data["gateways"]["ibkr"]["port"] == 7497
 
     # 3. POST with unknown broker ID returns 404
     resp = client.post(

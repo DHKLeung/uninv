@@ -50,8 +50,8 @@ Place the broker gateway executables and JAR files inside the repository (under 
 
 ### Decision
 **Adopted the "Standalone Host Daemon" Pattern:**
-- Broker gateways (IB Gateway and Futu OpenD) are **external standalone programs** installed on the host OS.
-- The repository only tracks lightweight setup guides, connection parameters, and automated probe scripts (`gateways/ib_gateway/instruction.md`, `gateways/README.md`).
+- Broker gateways (Trader Workstation / TWS and Futu OpenD) are **external standalone programs** installed on the host OS.
+- The repository only tracks lightweight setup guides, connection parameters, and automated probe scripts (`gateways/tws/instruction.md`, `gateways/futu_gateway/instruction.md`, `gateways/README.md`).
 - Gateways run independently and expose localhost loopback TCP sockets (`127.0.0.1`).
 
 ---
@@ -71,10 +71,12 @@ We needed a socket server for the IBKR API. We compared the two official IBKR de
 | **API Protocol** | Identical IB Socket Protocol | Identical IB Socket Protocol |
 | **Default Live Port** | `7496` (Paper: `7497`) | `4001` (Paper: `4002`) |
 
-### Decision
-**Primary target: Standalone IB Gateway.**
-- Provides the lowest resource overhead and runs quietly in the background without UI clutter.
-- `uninv` targets TWS directly on default port `7496`. FastAPI starts independently of TWS; endpoints return clear diagnostics if TWS is offline and auto-reconnect once TWS is available.
+### Decision: Enforce Trader Workstation (TWS)
+**Enforced target: Trader Workstation (TWS) on port `7496`.**
+- While IB Gateway has a smaller memory footprint in theory, in real-world retail testing on Windows, IB Gateway suffers from persistent WebAuthn / Passkey challenge failures when authenticating with mobile devices.
+- **Trader Workstation (TWS)** handles Passkey authentication smoothly: when prompted for a security key, dismissing it provides a built-in QR code fallback that works reliably with iPhone Face ID and Android passkeys.
+- Once logged in, TWS exposes the exact same local socket API on port `7496` (Paper: `7497`). `uninv` connects directly to TWS on port `7496`.
+- Setup guide is documented in `gateways/tws/instruction.md`.
 
 ---
 
