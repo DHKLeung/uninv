@@ -65,23 +65,10 @@ const state = {
 // Helper Utilities
 // ---------------------------------------------------------------------------------------
 
-function getStoredEnabledBrokers() {
-  try {
-    const raw = localStorage.getItem("uninv_enabled_brokers");
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.warn("Failed to read uninv_enabled_brokers from localStorage", e);
-  }
-  return { ibkr: true, futu: true };
-}
-
-function saveStoredEnabledBrokers(enabledMap) {
-  try {
-    localStorage.setItem("uninv_enabled_brokers", JSON.stringify(enabledMap));
-  } catch (e) {
-    console.warn("Failed to save uninv_enabled_brokers to localStorage", e);
-  }
-}
+// Clear legacy stored enabled brokers if any existed
+try {
+  localStorage.removeItem("uninv_enabled_brokers");
+} catch (_) {}
 
 function formatUtcTimestamp(isoStr) {
   if (!isoStr) return "—";
@@ -223,10 +210,16 @@ async function load() {
 
     syncCurrencyDropdown(state.currencies);
 
-    // Filter brokers by user enabled preference
-    const enabledBrokers = getStoredEnabledBrokers();
-    state.settings.enabledBrokers = enabledBrokers;
-    const activeBrokers = brokers.filter((b) => enabledBrokers[b.id] !== false);
+    // Default all brokers to enabled on fresh startup (in-memory only, no previous state memory)
+    for (const b of brokers) {
+      if (state.settings.enabledBrokers[b.id] === undefined) {
+        state.settings.enabledBrokers[b.id] = true;
+      }
+    }
+    const activeBrokers = brokers.filter((b) => state.settings.enabledBrokers[b.id] !== false);
+
+    // Test gateway connection for all brokers in background regardless of checkbox state
+    testBrokerConnections().catch(() => {});
 
     const brokerMap = Object.fromEntries(brokers.map((b) => [b.id, b.name]));
 
@@ -528,8 +521,16 @@ function renderAccountValues() {
     0
   );
 
-  // Cash Balance: Net Liquidation Value - Gross Position Value
-  const cashBalance = netLiq - grossPositionVal;
+  // Cash Balance: sum of actual cash balances converted to selected currency
+  const cashBalance = filteredSnaps.reduce(
+    (acc, s) =>
+      acc +
+      (s.account_values?.cash_balances ?? []).reduce(
+        (subAcc, cb) => subAcc + convertAmount(cb.amount, cb.currency, ccy, state.fxMatrix),
+        0
+      ),
+    0
+  );
 
   const unrealizedPnl = filteredSnaps.reduce(
     (acc, s) =>
@@ -951,14 +952,13 @@ function wireSettingsEvents() {
       saveBtn.disabled = true;
       saveBtn.textContent = "Saving…";
 
-      // 1. Gather enabled checkboxes
+      // 1. Gather enabled checkboxes for current session (in-memory only, no memory across restarts)
       const toggles = $$(".broker-enable-toggle");
       const enabledMap = {};
       for (const t of toggles) {
         enabledMap[t.dataset.broker] = t.checked;
       }
       state.settings.enabledBrokers = enabledMap;
-      saveStoredEnabledBrokers(enabledMap);
 
       // 2. Gather host and port for each broker
       for (const b of state.brokers) {

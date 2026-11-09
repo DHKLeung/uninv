@@ -41,6 +41,7 @@ ACCOUNT_VAL_TAG_MAP: dict[str, str] = {
     "MaintMarginReq": "maint_margin_req",
     "NetLiquidation": "net_liquidation",
     "UnrealizedPnL": "unrealized_pnl",
+    "TotalCashValue": "cash_balance",
 }
 
 
@@ -259,8 +260,8 @@ class IBKRService:
                 with contextlib.suppress(ValueError):
                     totals[ACCOUNT_VAL_TAG_MAP[tag]] = float(val_str)
 
-        # Enforce Cash Balance + Gross Position Value == Net Liquidation Value
-        cash_balance = totals.get("net_liquidation", 0.0) - totals.get("gross_position_value", 0.0)
+        # Cash balance reported by IBKR in default/base currency
+        cash_balance = totals.pop("cash_balance", cash_map.get(default_currency, 0.0))
 
         cash_balances = [
             CashBalanceItem(currency=c, amount=amt)

@@ -254,6 +254,7 @@ class FutuService:
             total_maint_margin = 0.0
             total_fund_assets = 0.0
             total_bond_assets = 0.0
+            total_cash = 0.0
             all_positions: list[Position] = []
             cash_by_currency: dict[Currency, float] = {}
             fallback_unrealized_pnl = 0.0
@@ -311,6 +312,7 @@ class FutuService:
                         total_bond_assets += bond_mv
                         total_gross_mv += pos_mv + crypto_mv + fund_mv + bond_mv
                         total_maint_margin += _safe_float(row.get("maintenance_margin"), 0.0)
+                        total_cash += _safe_float(row.get("cash"), 0.0)
                         fallback_unrealized_pnl += _safe_float(row.get("unrealized_pl"), 0.0)
 
                         # Accumulate multi-currency cash balances
@@ -381,7 +383,7 @@ class FutuService:
             ]
 
             excess_liquidity = max(0.0, total_assets - total_maint_margin)
-            cash_balance = total_assets - total_gross_mv
+            cash_balance = total_cash if total_cash != 0.0 else sum(cash_by_currency.values())
 
             account_values = AccountValues(
                 currency=Currency.USD,

@@ -230,3 +230,8 @@ _Last updated: 2026-11-09_
   - 1-Click Fresh Clone Launchers: added `start-all.bat` and `start-all.cmd` in repository root and auto-bootstrap `uv sync` in `start-all.ps1` if `.venv` is absent.
   - Bumped version to `1.1.0` across backend (`pyproject.toml`, `__init__.py`), desktop (`Cargo.toml`, `tauri.conf.json`), UI (`index.html`), and all documentation.
   - 32/32 tests pass, Ruff format/check pass, Tauri `cargo check` compiles cleanly, verified via headless browser render.
+  - Cash Balance Accuracy & Clean Session Broker Defaults:
+    - Fixed IBKR cash balance discrepancy: eliminated naive `NetLiquidation - GrossPositionValue` derivative deduction that subtracted short option gross exposures twice, mapping `TotalCashValue` / `CashBalance` directly to `cash_balance`.
+    - Client-side Section 2 Cash Balance sums converted balances from `cash_balances` across accounts, matching Section 3 Cash Balances table to the exact penny.
+    - Broker checkbox state defaults to all enabled on every application launch without `localStorage` memory across restarts.
+    - Settings connection testing (`✓ Connected` vs `✗ Offline`) runs for all brokers regardless of checkbox state; checkboxes control portfolio ingestion in-memory during active session.

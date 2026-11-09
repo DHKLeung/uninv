@@ -113,7 +113,7 @@ class AccountValues(UninvModel):
     gross_position_value: float = Field(description="Gross position value")
     cash_balance: float = Field(
         default=0.0,
-        description="Total cash balance in base currency (net_liquidation - gross_position_value)",
+        description="Total cash balance in base currency",
     )
     maint_margin_req: float = Field(description="Maintenance margin requirement")
     excess_liquidity: float = Field(
