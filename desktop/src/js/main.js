@@ -84,14 +84,16 @@ function saveStoredEnabledBrokers(enabledMap) {
 }
 
 function formatUtcTimestamp(isoStr) {
-  if (!isoStr) return "–";
+  if (!isoStr) return "—";
   const dt = new Date(isoStr);
   if (Number.isNaN(dt.getTime())) return isoStr;
-  return dt.toLocaleString("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "medium",
-    timeZone: "UTC",
-  }) + " UTC";
+  const y = dt.getUTCFullYear();
+  const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(dt.getUTCDate()).padStart(2, "0");
+  const hh = String(dt.getUTCHours()).padStart(2, "0");
+  const mm = String(dt.getUTCMinutes()).padStart(2, "0");
+  const ss = String(dt.getUTCSeconds()).padStart(2, "0");
+  return `${y}-${m}-${d} ${hh}:${mm}:${ss} +00:00`;
 }
 
 function formatAccountDisplay(brokerId, accountId) {
@@ -123,6 +125,14 @@ function syncCurrencyDropdown(currencies) {
 
 let autoRefreshTimer = null;
 
+const INTERVAL_LABELS = {
+  "30": "30 secs",
+  "60": "1 min",
+  "120": "2 mins",
+  "300": "5 mins",
+  "600": "10 mins",
+};
+
 /**
  * Update the refresh button appearance, disabled state, and tooltip title.
  * Only clickable when refreshInterval is "manual".
@@ -138,9 +148,10 @@ function updateRefreshButton() {
   } else {
     btn.classList.remove("loading");
     btn.disabled = !isManual;
+    const intervalLabel = INTERVAL_LABELS[state.refreshInterval] || `${state.refreshInterval}s`;
     btn.title = isManual
       ? "Refresh portfolio"
-      : `Auto-refresh active (${state.refreshInterval === "1" ? "1 min" : state.refreshInterval + " mins"}) - select Manual to refresh manually`;
+      : `Auto-refresh active (${intervalLabel}) - select Manual to refresh manually`;
   }
 }
 
@@ -154,10 +165,10 @@ function scheduleAutoRefresh() {
     autoRefreshTimer = null;
   }
 
-  const intervalMinutes =
+  const intervalSec =
     state.refreshInterval === "manual" ? 0 : parseInt(state.refreshInterval, 10);
-  if (intervalMinutes > 0) {
-    const ms = intervalMinutes * 60 * 1000;
+  if (intervalSec > 0) {
+    const ms = intervalSec * 1000;
     autoRefreshTimer = setInterval(() => {
       if (state.isLoading) {
         console.log("Auto-refresh skipped: previous refresh still in progress");
@@ -205,7 +216,7 @@ async function load() {
 
     if (fxData.asof) {
       endpointTimestamps.push({
-        label: "FX Matrix (/api/v1/fx)",
+        label: "FX Matrix",
         asof: fxData.asof,
       });
     }
@@ -226,7 +237,7 @@ async function load() {
           const resp = await apiGet(`/api/v1/accounts?broker_id=${encodeURIComponent(b.id)}`);
           if (resp.asof) {
             endpointTimestamps.push({
-              label: `${brokerMap[b.id] || b.id} Accounts (/api/v1/accounts)`,
+              label: `${brokerMap[b.id] || b.id} Accounts`,
               asof: resp.asof,
             });
           }
@@ -250,7 +261,7 @@ async function load() {
               if (snap.asof) {
                 const acctFmt = formatAccountDisplay(snap.broker_id, snap.account_id);
                 endpointTimestamps.push({
-                  label: `${brokerMap[snap.broker_id] || snap.broker_id} (${acctFmt}) Snapshot`,
+                  label: `${brokerMap[snap.broker_id] || snap.broker_id} (${acctFmt})`,
                   asof: snap.asof,
                 });
               }
@@ -349,7 +360,7 @@ function renderHeader() {
         )
         .join("");
     } else {
-      tooltipList.innerHTML = `<div class="tooltip-empty">No endpoint timestamps recorded</div>`;
+      tooltipList.innerHTML = `<div class="tooltip-empty">No data timestamps recorded</div>`;
     }
   }
 

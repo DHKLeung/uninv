@@ -29,7 +29,7 @@
           <span id="as-of" class="as-of-time"></span>
           <span class="as-of-info-icon" title="View endpoint timestamps">ⓘ</span>
           <div class="as-of-tooltip" id="as-of-tooltip">
-            <div class="tooltip-header">Endpoint Timestamps</div>
+            <div class="tooltip-header">Data Timestamps</div>
             <div class="tooltip-list" id="as-of-tooltip-list">
               <div class="tooltip-empty">No queries yet</div>
             </div>
@@ -56,10 +56,11 @@
         <div class="refresh-controls">
           <select id="refresh-interval-select" class="refresh-interval-dropdown" title="Auto-refresh interval">
             <option value="manual" selected>Manual</option>
-            <option value="1">1 min</option>
-            <option value="2">2 mins</option>
-            <option value="5">5 mins</option>
-            <option value="10">10 mins</option>
+            <option value="30">30 secs</option>
+            <option value="60">1 min</option>
+            <option value="120">2 mins</option>
+            <option value="300">5 mins</option>
+            <option value="600">10 mins</option>
           </select>
 
           <button id="refresh-btn" class="btn btn-icon btn-refresh" type="button" title="Refresh portfolio">
