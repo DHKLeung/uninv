@@ -227,7 +227,7 @@ _Last updated: 2026-11-09_
     - Only clickable when `Manual` is selected; disabled and styled with `not-allowed` / low opacity in automatic modes.
     - Automatic overlap skipping: if a previous refresh is still active when interval triggers, skips cleanly without pile-up.
   - Migrated backend port from `8000` to `7541` across Python config, Tauri Rust proxy, frontend API connector, launcher scripts, and all documentation to prevent collisions with third-party software.
-  - 1-Click Fresh Clone Launchers: added `start-all.bat` and `start-all.cmd` in repository root and auto-bootstrap `uv sync` in `start-all.ps1` if `.venv` is absent.
+  - 1-Click Fresh Clone Launcher: consolidated in `scripts/start-all.cmd` (auto-bootstraps `uv sync` in `start-all.ps1` if `.venv` is absent).
   - Bumped version to `1.1.0` across backend (`pyproject.toml`, `__init__.py`), desktop (`Cargo.toml`, `tauri.conf.json`), UI (`index.html`), and all documentation.
   - 32/32 tests pass, Ruff format/check pass, Tauri `cargo check` compiles cleanly, verified via headless browser render.
   - Cash Balance Accuracy & Clean Session Broker Defaults:
@@ -235,3 +235,9 @@ _Last updated: 2026-11-09_
     - Client-side Section 2 Cash Balance sums converted balances from `cash_balances` across accounts, matching Section 3 Cash Balances table to the exact penny.
     - Broker checkbox state defaults to all enabled on every application launch without `localStorage` memory across restarts.
     - Settings connection testing (`✓ Connected` vs `✗ Offline`) runs for all brokers regardless of checkbox state; checkboxes control portfolio ingestion in-memory during active session.
+- ✅ Repository Structure Audit & Cleanup:
+  - Enforced strict top-level split: eliminated root-level launcher scripts (`start-all.bat`, `start-all.cmd`), consolidating all execution and setup scripts strictly inside `scripts/`.
+  - Removed duplicate `.bat` wrappers in `scripts/` (`start-all.bat`, `start-backend.bat`, `start-desktop.bat`), preserving `.cmd` for Windows cmd/double-click, `.ps1` for PowerShell, and `.sh` for Unix shells.
+  - Standardized `scripts/install-build-tools.bat` to `scripts/install-build-tools.cmd` for consistent `.cmd` script naming.
+  - Removed orphaned and unreferenced asset `desktop/app-icon.png`.
+  - Cleaned up obsolete `FxRate` model and legacy `Broker` alias in `backend/src/uninv_backend/models.py`.

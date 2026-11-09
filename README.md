@@ -105,7 +105,7 @@ Before launching `uninv`, set up the broker daemons you use:
 |---|---|---|
 | [uv](https://docs.astral.sh/uv/) | Fast Python package management | `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 \| iex"` |
 | [Rust](https://rustup.rs/) | Compiles the Tauri desktop shell | `winget install Rustlang.Rustup` |
-| MSVC C++ Build Tools | Linker for Rust on Windows | `winget install Microsoft.VisualStudio.2022.BuildTools --override "--passive --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"` |
+| MSVC C++ Build Tools | Linker for Rust on Windows | `scripts\install-build-tools.cmd` or `winget install Microsoft.VisualStudio.2022.BuildTools --override "--passive --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"` |
 | WebView2 | System webview renderer | Pre-installed on Windows 10/11 |
 | Broker Gateways | Live account feeds | [IB Gateway / TWS](gateways/ib_gateway/instruction.md) & [Futu OpenD](gateways/futu_gateway/instruction.md) |
 
@@ -133,7 +133,7 @@ To launch the complete application (Python FastAPI backend + Tauri native deskto
   ```powershell
   .\scripts\start-all.ps1
   ```
-  *(Or double-click `start-all.bat` or `scripts\start-all.cmd`)*
+  *(Or double-click `scripts\start-all.cmd`)*
 
 - **macOS / Linux (Bash):**
   ```bash

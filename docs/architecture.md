@@ -107,7 +107,7 @@ supports that by setting `build.devUrl` / `beforeDevCommand` in `tauri.conf.json
 ## 7. Process model (current → planned)
 
 - **Now (dev):** backend and desktop app run as two processes orchestrated by `scripts/start-all.ps1`
-  (or `start-all.cmd`) on Windows, and `scripts/start-all.sh` on macOS/Linux. Alternatively,
+  (or `scripts/start-all.cmd`) on Windows, and `scripts/start-all.sh` on macOS/Linux. Alternatively,
   run independently via `start-backend` and `start-desktop`.
 - **Planned (release - Desktop):** package the backend with PyInstaller as a Tauri
   [sidecar](https://v2.tauri.app/develop/sidecar/). Tauri starts it on launch, picks a free

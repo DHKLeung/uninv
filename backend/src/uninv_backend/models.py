@@ -217,15 +217,6 @@ class BrokerAccountSnapshot(UninvModel):
     positions: list[Position] = Field(default_factory=list, description="Open positions")
 
 
-class FxRate(UninvModel):
-    """Foreign exchange rate quote preserving raw rate precision."""
-
-    base: Currency = Field(description="Base currency")
-    quote: Currency = Field(description="Quote currency")
-    rate: float = Field(description="Units of quote per 1 unit of base (raw float)")
-    asof: datetime = Field(description="UTC timestamp of the query (ISO 8601)")
-
-
 class FxMatrixResponse(UninvModel):
     """Matrix of foreign exchange rates across all supported currencies."""
 
@@ -234,7 +225,3 @@ class FxMatrixResponse(UninvModel):
     rates: dict[Currency, dict[Currency, float]] = Field(
         description="Conversion matrix: rates[from][to] gives multiplier (1 from = X to)"
     )
-
-
-# Backwards compatibility alias
-Broker = SupportingBroker
