@@ -7,11 +7,11 @@ consecutive whitespace collapsed to 1 space).
 Numerical fields preserve exact raw broker values without rounding.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Self
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class UninvModel(BaseModel):
@@ -158,8 +158,23 @@ class Position(UninvModel):
     last_trading_date: str | None = Field(
         default=None, description="Last trading date / expiration in YYYY-MM-DD format"
     )
+    days_left: int | None = Field(
+        default=None,
+        description="Calendar days until last trading date / expiration, or None.",
+    )
     strike: float | None = Field(default=None, description="Option/future option strike price")
     option_type: OptionType | None = Field(default=None, description="Option type (CALL or PUT)")
+
+    @model_validator(mode="after")
+    def _calculate_days_left(self) -> Self:
+        if self.days_left is None and self.last_trading_date:
+            try:
+                target = datetime.strptime(self.last_trading_date, "%Y-%m-%d").date()
+                today = datetime.now(UTC).date()
+                self.days_left = (target - today).days
+            except Exception:
+                pass
+        return self
 
 
 class BrokerConnectionTestResponse(UninvModel):

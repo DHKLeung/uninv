@@ -41,6 +41,7 @@ Rules for `backend/`. Root `AGENTS.md` applies too.
     - `exchange`: primary exchange destination typed as `Exchange | None` Enum.
     - `sec_type`: security type typed as `SecurityType` Enum.
     - `last_trading_date`: expiration date in `YYYY-MM-DD` format.
+    - `days_left`: calendar days until expiration (auto-calculated from `last_trading_date` vs current UTC date).
     - `strike`: strike price for options.
     - `option_type`: `OptionType.CALL`, `OptionType.PUT`, or `None`.
   - `AccountValues` fields:

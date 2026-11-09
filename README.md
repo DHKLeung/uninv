@@ -1,4 +1,4 @@
-# uninv: Unified Investing Platform (v1.0.0)
+# uninv: Unified Investing Platform (v1.1.0)
 
 **uninv** (**uni**fied + **inv**esting) is a cross-platform desktop application designed for retail investors to monitor and consolidate multiple broker accounts into a **single, unified portfolio view**. 
 
@@ -168,7 +168,7 @@ While the backend is running, interactive OpenAPI documentation is available at 
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/health` | Service liveness probe returning version `1.0.0`. |
+| `GET` | `/health` | Service liveness probe returning version `1.1.0`. |
 | `GET` | `/api/v1/supporting-brokers` | Returns configured brokers: `[{"id": "ibkr", "name": "Interactive Brokers"}, {"id": "futu", "name": "Futu"}]`. |
 | `GET` | `/api/v1/accounts?broker_id={id}` | Returns active account IDs with UTC `asof` timestamp. |
 | `GET` | `/api/v1/snapshot?broker_id={id}&account_id={id}` | Returns complete live snapshot: `AccountValues`, open `Position` list, and completion `asof`. |

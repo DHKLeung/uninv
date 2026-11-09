@@ -162,6 +162,27 @@ export function pnlClass(value) {
 }
 
 /**
+ * Calculate the calendar date difference (days from now to target date).
+ * Target date is expected as "YYYY-MM-DD".
+ * Returns integer number of days, or null if date is not provided or invalid.
+ */
+export function calculateDaysLeft(targetDateStr) {
+  if (!targetDateStr || typeof targetDateStr !== "string") return null;
+  const parts = targetDateStr.trim().split("-");
+  if (parts.length !== 3) return null;
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1;
+  const day = parseInt(parts[2], 10);
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
+
+  const targetUtc = Date.UTC(year, month, day);
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const msPerDay = 1000 * 60 * 60 * 24;
+  return Math.round((targetUtc - todayUtc) / msPerDay);
+}
+
+/**
  * Escape text before inserting into innerHTML.
  */
 export function esc(text) {

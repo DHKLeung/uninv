@@ -16,13 +16,13 @@ any Rust change in plain terms with Python comparisons.
       1. **Accounts Selector:** Horizontal tiles ("All Accounts" with account + position count, plus individual accounts).
       2. **Account Values Board:** 6 structured cards across 2 rows. When "All Accounts" is active, Maintenance Margin and Excess Liquidity display `—`, while other metrics aggregate.
       3. **Holdings:**
-         - **Positions Table (12 columns):** `Broker / Account`, `Instrument / Symbol`, `Type / Exchange`, `Position`, `Avg Price`, `Mark Price`, `Cost Basis`, `Market Value`, `Last Trading Date`, `Unrealised P&L`, `Weight`, `Currency`. Rows are never aggregated.
+         - **Positions Table (13 columns):** `Broker / Account`, `Instrument / Symbol`, `Type / Exchange`, `Position`, `Avg Price`, `Mark Price`, `Cost Basis`, `Market Value`, `Last Trading Date`, `Days Left`, `Unrealised P&L`, `Weight`, `Currency`. Rows are never aggregated.
          - **Cash Balances Table (4 columns):** `Broker / Account`, `Currency`, `Amount (RAW)`, `AMOUNT (CONVERTED)`.
     - Settings Page:
       - Broker Gateways section with Host/IP and Port configuration per broker.
       - Edit and Save controls (inputs disabled until Edit is clicked).
       - Live connection testing via `/api/v1/broker-connection-test` with status badges.
-    - About Page: displays app icon, `uninv`, `Unified Investing`, description, Version: `1.0.0`, Author: `DHKLeung`.
+    - About Page: displays app icon, `uninv`, `Unified Investing`, description, Version: `1.1.0`, Author: `DHKLeung`.
 - `src-tauri/`: Rust shell.
   - `src/lib.rs`: `Backend` state (reqwest client and base URL from `UNINV_BACKEND_URL` / `RwLock`); commands `api_get`, `api_post`, `backend_url`, and `set_backend_url`.
   - `tauri.conf.json`: window config, CSP, bundle, and icons.

@@ -90,10 +90,11 @@ currency conversion layer:
 
 ## 5. Scope & Zero-Aggregation Holdings Philosophy
 
-In `v1.0.0`, `uninv` provides a focused, retail-first portfolio view:
+In `v1.1.0`, `uninv` provides a focused, retail-first portfolio view:
 - **Accounts as the Selector:** Section 1 account tiles serve as the sole selector. Selecting "All Accounts" displays consolidated totals; selecting an individual account tile filters metrics and holdings down to that account.
 - **Zero Aggregation in Holdings:** When "All Accounts" is selected, positions and cash balances from different accounts are kept completely un-aggregated. Because each broker names instruments differently and uses distinct local symbologies (e.g., `NVDA Jan19'29 145 CALL` vs OCC code), forced merging would risk corrupting cost basis or ledger accuracy. Instead, each position row is preserved with its `Broker / Account` tag.
-- **Future Custom Groups:** User-defined groups of positions (spanning brokers) with local SQLite persistence and allocation targets are planned for v1.1.0.
+- **13-Column Positions Grid:** Standardized columns including `Last Trading Date` and `Days Left` (calendar date difference from now to expiration date for derivatives, with nulls sorted neatly to the bottom).
+- **Future Custom Groups:** User-defined groups of positions (spanning brokers) with local SQLite persistence and allocation targets are planned for subsequent minor releases.
 
 ## 6. Frontend: no build step
 

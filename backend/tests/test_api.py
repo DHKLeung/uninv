@@ -33,6 +33,7 @@ def test_health(client: TestClient) -> None:
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json()["status"] == "ok"
+    assert resp.json()["version"] == "1.1.0"
 
 
 def test_supporting_brokers_endpoint(client: TestClient) -> None:
@@ -174,6 +175,7 @@ def test_snapshot_endpoint(client: TestClient) -> None:
         assert boxx["exchange"] == "BATS"
         assert boxx["sec_type"] == "STOCKS"
         assert boxx["last_trading_date"] is None
+        assert boxx["days_left"] is None
         assert boxx["option_type"] is None
 
         nvda = positions[1]
@@ -183,6 +185,8 @@ def test_snapshot_endpoint(client: TestClient) -> None:
         assert nvda["option_type"] == "CALL"
         assert nvda["sec_type"] == "OPTIONS"
         assert nvda["last_trading_date"] == "2029-01-19"
+        assert isinstance(nvda["days_left"], int)
+        assert nvda["days_left"] > 0
         assert nvda["cost_basis"] == 7081.85
         assert nvda["market_value"] == 7497.76
 
@@ -698,3 +702,62 @@ def test_broker_gateway_config_endpoints(client: TestClient) -> None:
         "/api/v1/broker-gateway-config",
         json={"broker_id": "ibkr", "host": "127.0.0.1", "port": 7496},
     )
+
+
+def test_position_days_left_calculation() -> None:
+    from datetime import datetime, timedelta
+
+    from uninv_backend.models import Currency, Position, SecurityType
+
+    today = datetime.now(UTC).date()
+    target_future = (today + timedelta(days=15)).strftime("%Y-%m-%d")
+    target_past = (today - timedelta(days=5)).strftime("%Y-%m-%d")
+    target_today = today.strftime("%Y-%m-%d")
+
+    # 1. Future expiration
+    pos_future = Position(
+        instrument="TEST CALL",
+        position=1.0,
+        mark_price=10.0,
+        market_value=1000.0,
+        currency=Currency.USD,
+        sec_type=SecurityType.OPTIONS,
+        last_trading_date=target_future,
+    )
+    assert pos_future.days_left == 15
+
+    # 2. Past expiration
+    pos_past = Position(
+        instrument="TEST EXPIRED",
+        position=1.0,
+        mark_price=0.0,
+        market_value=0.0,
+        currency=Currency.USD,
+        sec_type=SecurityType.OPTIONS,
+        last_trading_date=target_past,
+    )
+    assert pos_past.days_left == -5
+
+    # 3. Today expiration
+    pos_today = Position(
+        instrument="TEST 0DTE",
+        position=1.0,
+        mark_price=5.0,
+        market_value=500.0,
+        currency=Currency.USD,
+        sec_type=SecurityType.OPTIONS,
+        last_trading_date=target_today,
+    )
+    assert pos_today.days_left == 0
+
+    # 4. No last_trading_date (e.g. stock)
+    pos_stock = Position(
+        instrument="TEST STOCK",
+        position=100.0,
+        mark_price=50.0,
+        market_value=5000.0,
+        currency=Currency.USD,
+        sec_type=SecurityType.STOCKS,
+        last_trading_date=None,
+    )
+    assert pos_stock.days_left is None

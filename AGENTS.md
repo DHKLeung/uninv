@@ -96,7 +96,7 @@ backend running, then
 
 ## Current status (update this section as work progresses)
 
-_Last updated: 2026-11-08_
+_Last updated: 2026-11-09_
 
 - ✅ Backend rewritten to standardized broker feed and unified snapshot model:
   - Abstracted all broker complexity into FastAPI: backend translates raw broker feeds into uninv unified models with strict Enums for loud failure on new items.
@@ -215,3 +215,12 @@ _Last updated: 2026-11-08_
     - Removed redundant endpoints (`/api/v1/broker-gateway-port`) and models.
     - Updated all project markdown documentation (`README.md`, `backend/README.md`, `backend/AGENTS.md`, `desktop/AGENTS.md`, `docs/architecture.md`, `docs/trials_and_errors.md`, `gateways/ib_gateway/instruction.md`, `gateways/futu_gateway/instruction.md`).
     - 31/31 unit tests pass, Ruff check passes, Tauri `cargo check` passes.
+
+- ✅ v1.1.0 Days Left Column & Version Bump:
+  - Added `DAYS LEFT` column to Positions table located immediately right of `Last Trading Date` (13 columns total).
+  - Calculates calendar date difference between today (UTC) and `last_trading_date` for options/futures derivatives; displays em-dash (`—`) for perpetual holdings (stocks, funds, crypto).
+  - Auto-calculated in backend `Position` model via `@model_validator(mode="after")` and accompanied by client-side `calculateDaysLeft()` utility in `format.js`.
+  - Smart null-at-bottom table column sorting: clicking `DAYS LEFT` sorts derivative contracts by expiration days (ascending or descending) while keeping non-expiring stocks cleanly pinned at the bottom.
+  - Colspan dynamically updated to 13 on empty search/filter results.
+  - Bumped version to `1.1.0` across backend (`pyproject.toml`, `__init__.py`), desktop (`Cargo.toml`, `tauri.conf.json`), UI (`index.html`), and all documentation.
+  - 32/32 tests pass, Ruff format/check pass, Tauri `cargo check` compiles cleanly, verified via headless browser render.

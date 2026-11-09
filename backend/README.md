@@ -1,4 +1,4 @@
-# uninv-backend (v1.0.0)
+# uninv-backend (v1.1.0)
 
 Python 3.13 FastAPI backend for `uninv`, managed with **uv**.
 

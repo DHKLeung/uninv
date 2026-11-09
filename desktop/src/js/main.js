@@ -16,6 +16,7 @@
 import { apiGet, apiPost, backendUrl } from "./api.js";
 import {
   CURRENCY_SYMBOLS,
+  calculateDaysLeft,
   convertAmount,
   esc,
   formatMoney,
@@ -558,18 +559,24 @@ function renderPositions() {
     0
   );
 
-  // Pre-calculate converted market value and weight per current account scope
+  // Pre-calculate converted market value, weight, and days left per current account scope
   for (const p of rows) {
     p.marketValConverted = convertAmount(p.market_value, p.currency, ccy, state.fxMatrix);
     p.weight = scopeNetLiq > 0 ? (p.marketValConverted / scopeNetLiq) : 0;
+    if (p.days_left == null && p.last_trading_date) {
+      p.days_left = calculateDaysLeft(p.last_trading_date);
+    }
   }
 
   const { key, dir } = state.sort;
   rows = rows.toSorted((a, b) => {
     let x = a[key];
     let y = b[key];
-    if (x === null || x === undefined) x = "";
-    if (y === null || y === undefined) y = "";
+    const xNull = x === null || x === undefined || x === "";
+    const yNull = y === null || y === undefined || y === "";
+    if (xNull && yNull) return 0;
+    if (xNull) return 1;
+    if (yNull) return -1;
     if (typeof x === "number" && typeof y === "number") {
       return (x - y) * dir;
     }
@@ -637,6 +644,13 @@ function renderPositions() {
             ? esc(p.last_trading_date)
             : '<span class="muted">—</span>';
 
+          const daysLeftVal =
+            p.days_left != null ? p.days_left : calculateDaysLeft(p.last_trading_date);
+          const daysLeftHtml =
+            daysLeftVal != null
+              ? esc(daysLeftVal)
+              : '<span class="muted">—</span>';
+
           const pnlHtml =
             p.cost_basis != null
               ? `<div>${formatSignedMoney(pnlConverted, ccy)}</div>
@@ -660,6 +674,7 @@ function renderPositions() {
             <td class="num font-mono">${costBasisHtml}</td>
             <td class="num font-mono strong">${formatMoney(marketValConverted, ccy)}</td>
             <td class="font-mono">${lastTradeDateHtml}</td>
+            <td class="num font-mono">${daysLeftHtml}</td>
             <td class="num font-mono ${p.cost_basis != null ? pnlClass(p.unrealized_pnl) : ""}">
               ${pnlHtml}
             </td>
@@ -668,7 +683,7 @@ function renderPositions() {
           </tr>`;
         })
         .join("")
-    : `<tr><td colspan="12" class="empty muted">No positions match the current account or search filter.</td></tr>`;
+    : `<tr><td colspan="13" class="empty muted">No positions match the current account or search filter.</td></tr>`;
 }
 
 function renderCashBalances() {
