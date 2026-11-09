@@ -52,12 +52,7 @@ jobs:
 
       - name: Package Python backend with PyInstaller
         working-directory: backend
-        run: |
-          uv run pyinstaller --noconfirm --clean --name uninv-backend --onefile \
-            --collect-all uvicorn \
-            --collect-all futu \
-            --collect-all ib_async \
-            entrypoint.py
+        run: uv run pyinstaller --noconfirm --clean --name uninv-backend --onefile --collect-all uvicorn --collect-all futu --collect-all ib_async entrypoint.py
 
       - name: Stage sidecar binary for Tauri (Windows)
         if: runner.os == 'Windows'
@@ -89,8 +84,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: desktop
-          tagName: v1.1.0
-          releaseName: "uninv v1.1.0"
+          tagName: ${{ github.ref_name }}
+          releaseName: "uninv ${{ github.ref_name }}"
           releaseBody: "See release notes in release description."
           releaseDraft: false
           prerelease: false
