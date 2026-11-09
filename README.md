@@ -29,12 +29,13 @@ Manage Host/IP and TCP ports for each broker gateway with live socket and handsh
 - **Unidirectional Reactive Portfolio UI:**
   - **Accounts Selector:** Horizontal account tiles. Selecting "All Accounts" presents consolidated figures; selecting an individual account tile filters metrics and holdings to that specific account.
   - **Account Values Board:** Clear 6-item financial ledger:
-    - **Row 1:** Net Liquidation Value, Gross Position Value, Cash Balance (`Cash Balance + Gross Position Value == Net Liquidation Value`).
+    - **Row 1:** Net Liquidation Value, Gross Position Value, Cash Balance.
     - **Row 2:** Unrealised P&L (with % return badge), Maintenance Margin, Excess Liquidity.
-  - **Holdings — 12-Column Positions Table:** Columns from left to right:
-    `Broker / Account` (stacked), `Instrument / Symbol` (stacked), `Type / Exchange` (stacked), `Position`, `Avg Price`, `Mark Price`, `Cost Basis`, `Market Value`, `Last Trading Date`, `Unrealised P&L`, `Weight` (portfolio weight % calculated per active tile scope), `Currency`.
+  - **Holdings — 13-Column Positions Table:** Columns from left to right:
+    `Broker / Account` (stacked), `Instrument / Symbol` (stacked), `Type / Exchange` (stacked), `Position`, `Avg Price`, `Mark Price`, `Cost Basis`, `Market Value`, `Last Trading Date`, `Days Left` (calendar days until expiration for derivatives with smart column sorting), `Unrealised P&L`, `Weight` (portfolio weight % calculated per active tile scope), `Currency`.
     In "All Accounts" mode, positions are displayed additively without forced symbol merging.
   - **Multi-Currency Cash Balances:** Displays raw amounts in original currencies alongside converted values.
+  - **Auto-Refresh & Manual Controls:** Configurable interval selector (`Manual`, `30 secs`, `1 min`, `2 mins`, `5 mins`, `10 mins`) with overlap-skipping execution. Single-click manual refresh button with spinning state animation.
 - **Global FX Matrix & Instant Client-Side Conversion:**
   - Synthesizes a full 11×11 conversion matrix (`USD`, `HKD`, `EUR`, `GBP`, `JPY`, `CAD`, `AUD`, `CHF`, `CNH`, `SGD`, `NZD`) via IDEALPRO quote probes and graph routing.
   - Changing the headbar currency dropdown recalculates the entire dashboard locally with **zero network latency**.

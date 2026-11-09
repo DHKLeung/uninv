@@ -45,6 +45,6 @@ Rules for `backend/`. Root `AGENTS.md` applies too.
     - `strike`: strike price for options.
     - `option_type`: `OptionType.CALL`, `OptionType.PUT`, or `None`.
   - `AccountValues` fields:
-    - Streamlined financial overview: `currency`, `net_liquidation`, `gross_position_value`, `cash_balance` (`net_liquidation - gross_position_value`), `maint_margin_req`, `excess_liquidity`, `unrealized_pnl`, `cash_balances` (multi-currency list with zero filtering `abs(amt) > 1e-8`).
+    - Streamlined financial overview: `currency`, `net_liquidation`, `gross_position_value`, `cash_balance` (directly from broker feed: `TotalCashValue` / `cash`), `maint_margin_req`, `excess_liquidity`, `unrealized_pnl`, `cash_balances` (multi-currency list with zero filtering `abs(amt) > 1e-8`).
 - Dependencies: `uv add <pkg>` / `uv add --dev <pkg>`; commit `uv.lock`.
 - Tests live in `tests/`, using `fastapi.testclient.TestClient`.

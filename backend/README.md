@@ -37,7 +37,7 @@ src/uninv_backend/
     ├── __init__.py
     └── routes.py      # REST endpoints under /api/v1
 tests/
-    └── test_api.py    # Comprehensive test suite (31 tests)
+    └── test_api.py    # Comprehensive test suite (32 tests)
 ```
 
 ---
