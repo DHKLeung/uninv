@@ -27,18 +27,18 @@ Write-Host "==========================================================" -Foregro
 # Check backend status via health check
 $backendActive = $false
 try {
-    $resp = Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -TimeoutSec 2 -ErrorAction Stop
+    $resp = Invoke-RestMethod -Uri "http://127.0.0.1:7541/health" -TimeoutSec 2 -ErrorAction Stop
     $backendActive = ($resp.status -eq "ok")
 } catch {
-    $backendActive = (Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue) -ne $null
+    $backendActive = (Get-NetTCPConnection -LocalPort 7541 -State Listen -ErrorAction SilentlyContinue) -ne $null
 }
 
 if (-not $backendActive) {
-    Write-Host "[Warning] Backend is not running on http://127.0.0.1:8000." -ForegroundColor Yellow
+    Write-Host "[Warning] Backend is not running on http://127.0.0.1:7541." -ForegroundColor Yellow
     Write-Host "          Start it in another terminal with .\scripts\start-backend.ps1" -ForegroundColor Yellow
     Write-Host "          or run both together with .\scripts\start-all.ps1" -ForegroundColor Yellow
 } else {
-    Write-Host "[Backend] Connected to active backend at http://127.0.0.1:8000" -ForegroundColor Green
+    Write-Host "[Backend] Connected to active backend at http://127.0.0.1:7541" -ForegroundColor Green
 }
 
 if ($Browser) {

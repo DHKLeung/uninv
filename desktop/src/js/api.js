@@ -5,7 +5,7 @@
  * to the Python backend. In a normal browser (or mobile web) we call the backend directly with fetch().
  */
 
-const DEFAULT_BACKEND_URL = "http://127.0.0.1:8000";
+const DEFAULT_BACKEND_URL = "http://127.0.0.1:7541";
 
 const tauri = window.__TAURI__;
 export const inTauri = Boolean(tauri?.core?.invoke);

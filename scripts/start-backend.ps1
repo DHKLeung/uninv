@@ -2,7 +2,7 @@
 .SYNOPSIS
     Starts the uninv Python FastAPI backend.
 .DESCRIPTION
-    Runs uninv-backend via uv on http://127.0.0.1:8000.
+    Runs uninv-backend via uv on http://127.0.0.1:7541.
     Checks connectivity to broker daemons (IBKR TWS on 7496, Futu OpenD on 11111).
 .EXAMPLE
     .\scripts\start-backend.ps1
@@ -35,28 +35,28 @@ if ($futuActive) {
 
 # Check if backend is already running and healthy
 try {
-    $resp = Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -TimeoutSec 2 -ErrorAction Stop
+    $resp = Invoke-RestMethod -Uri "http://127.0.0.1:7541/health" -TimeoutSec 2 -ErrorAction Stop
     if ($resp.status -eq "ok") {
-        Write-Host "[Backend] Server already running at http://127.0.0.1:8000" -ForegroundColor Green
-        Write-Host "[Backend] Interactive docs at http://127.0.0.1:8000/docs" -ForegroundColor Cyan
+        Write-Host "[Backend] Server already running at http://127.0.0.1:7541" -ForegroundColor Green
+        Write-Host "[Backend] Interactive docs at http://127.0.0.1:7541/docs" -ForegroundColor Cyan
         exit 0
     }
 } catch {}
 
-# Clean up any unresponsive process holding port 8000
-$listeners = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
+# Clean up any unresponsive process holding port 7541
+$listeners = Get-NetTCPConnection -LocalPort 7541 -State Listen -ErrorAction SilentlyContinue
 if ($listeners) {
     foreach ($l in $listeners) {
         if ($l.OwningProcess -gt 0) {
-            Write-Host "[Backend] Terminating unresponsive process holding port 8000 (PID: $($l.OwningProcess)) ..." -ForegroundColor Yellow
+            Write-Host "[Backend] Terminating unresponsive process holding port 7541 (PID: $($l.OwningProcess)) ..." -ForegroundColor Yellow
             taskkill /PID $l.OwningProcess /T /F *> $null
         }
     }
     Start-Sleep -Milliseconds 500
 }
 
-Write-Host "[Backend] Launching FastAPI at http://127.0.0.1:8000 (Ctrl+C to stop) ..." -ForegroundColor Cyan
-Write-Host "[Backend] Interactive docs: http://127.0.0.1:8000/docs" -ForegroundColor Green
+Write-Host "[Backend] Launching FastAPI at http://127.0.0.1:7541 (Ctrl+C to stop) ..." -ForegroundColor Cyan
+Write-Host "[Backend] Interactive docs: http://127.0.0.1:7541/docs" -ForegroundColor Green
 
 Set-Location "$root\backend"
 & uv run uninv-backend --reload

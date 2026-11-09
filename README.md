@@ -78,7 +78,7 @@ flowchart LR
     FX --> API
 
     UI <--"invoke('api_get' / 'api_post')"--> RS
-    RS <--"HTTP localhost:8000"--> API
+    RS <--"HTTP localhost:7541"--> API
 ```
 
 ---
@@ -132,7 +132,7 @@ To launch the complete application (Python FastAPI backend + Tauri native deskto
   ```powershell
   .\scripts\start-all.ps1
   ```
-  *(Or double-click `scripts\start-all.cmd`)*
+  *(Or double-click `start-all.bat` or `scripts\start-all.cmd`)*
 
 - **macOS / Linux (Bash):**
   ```bash
@@ -140,7 +140,7 @@ To launch the complete application (Python FastAPI backend + Tauri native deskto
   ```
 
 #### How It Works & Automatic Compilation:
-- **Backend Orchestration:** The script starts the Python FastAPI server in the background and continuously probes `http://127.0.0.1:8000/health` until the service reports healthy.
+- **Backend Orchestration:** The script starts the Python FastAPI server in the background and continuously probes `http://127.0.0.1:7541/health` until the service reports healthy.
 - **Automatic Rust Compilation:** Once the backend is healthy, the script automatically changes into `desktop/src-tauri` and executes `cargo tauri dev` (or `cargo run`). **On first execution, Cargo automatically resolves all Rust crates and compiles the Tauri native desktop shell without requiring separate build commands.** Subsequent launches use the cached build and open immediately.
 - **Graceful Process Teardown:** Pressing `Ctrl+C` in your terminal automatically terminates the desktop app and background Python backend together cleanly.
 
@@ -153,7 +153,7 @@ This starts the FastAPI backend and automatically opens the UI in your default w
 
 ### 5. Running Components Independently
 ```powershell
-# Run backend only (FastAPI on :8000, docs at http://127.0.0.1:8000/docs)
+# Run backend only (FastAPI on :7541, docs at http://127.0.0.1:7541/docs)
 .\scripts\start-backend.ps1
 
 # Run desktop app only (requires backend running)
@@ -164,7 +164,7 @@ This starts the FastAPI backend and automatically opens the UI in your default w
 
 ## REST API Reference
 
-While the backend is running, interactive OpenAPI documentation is available at <http://127.0.0.1:8000/docs>.
+While the backend is running, interactive OpenAPI documentation is available at <http://127.0.0.1:7541/docs>.
 
 | Method | Endpoint | Description |
 |---|---|---|

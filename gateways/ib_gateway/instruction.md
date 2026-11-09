@@ -29,7 +29,7 @@ For these reasons, **Client Portal Gateway was permanently abandoned**.
                    │ Local TCP Socket
 ┌──────────────────▼─────────────────────┐
 │ uninv Python Backend (ib_async)        │
-│ FastAPI on http://127.0.0.1:8000       │
+│ FastAPI on http://127.0.0.1:7541       │
 └──────────────────┬─────────────────────┘
                    │
 ┌──────────────────▼─────────────────────┐

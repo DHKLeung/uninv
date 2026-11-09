@@ -40,7 +40,7 @@ try {
     # 2. Check if Backend is already active and healthy
     function Test-BackendHealth {
         try {
-            $resp = Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -TimeoutSec 2 -ErrorAction Stop
+            $resp = Invoke-RestMethod -Uri "http://127.0.0.1:7541/health" -TimeoutSec 2 -ErrorAction Stop
             return ($resp.status -eq "ok")
         } catch {
             return $false
@@ -48,14 +48,14 @@ try {
     }
 
     if (Test-BackendHealth) {
-        Write-Host "[Backend] FastAPI server already running on http://127.0.0.1:8000" -ForegroundColor Green
+        Write-Host "[Backend] FastAPI server already running on http://127.0.0.1:7541" -ForegroundColor Green
     } else {
-        # Clean up any orphaned process holding port 8000 in Listen state
-        $listeners = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
+        # Clean up any orphaned process holding port 7541 in Listen state
+        $listeners = Get-NetTCPConnection -LocalPort 7541 -State Listen -ErrorAction SilentlyContinue
         if ($listeners) {
             foreach ($l in $listeners) {
                 if ($l.OwningProcess -gt 0) {
-                    Write-Host "[Backend] Terminating unresponsive process holding port 8000 (PID: $($l.OwningProcess)) ..." -ForegroundColor Yellow
+                    Write-Host "[Backend] Terminating unresponsive process holding port 7541 (PID: $($l.OwningProcess)) ..." -ForegroundColor Yellow
                     taskkill /PID $l.OwningProcess /T /F *> $null
                 }
             }
@@ -72,13 +72,24 @@ try {
             }
         }
 
-        Write-Host "[Backend] Starting FastAPI server on http://127.0.0.1:8000 ..." -ForegroundColor Cyan
+        # On fresh clone, ensure virtualenv and dependencies are installed
+        if (-not (Test-Path "$root\backend\.venv")) {
+            Write-Host "[Backend] Initializing Python virtual environment (uv sync) ..." -ForegroundColor Cyan
+            Push-Location "$root\backend"
+            try {
+                & $uvCmd sync
+            } finally {
+                Pop-Location
+            }
+        }
+
+        Write-Host "[Backend] Starting FastAPI server on http://127.0.0.1:7541 ..." -ForegroundColor Cyan
         $backendProc = Start-Process -PassThru -NoNewWindow -WorkingDirectory "$root\backend" `
             -FilePath $uvCmd -ArgumentList "run", "uninv-backend", "--reload"
         
-        # Wait up to 10 seconds for backend health check
+        # Wait up to 15 seconds for backend health check
         $healthy = $false
-        for ($i = 0; $i -lt 20; $i++) {
+        for ($i = 0; $i -lt 30; $i++) {
             Start-Sleep -Milliseconds 500
             if ($backendProc.HasExited) {
                 Write-Host "[Backend] Error: Process exited early with code $($backendProc.ExitCode)!" -ForegroundColor Red
@@ -91,7 +102,7 @@ try {
         }
 
         if ($healthy) {
-            Write-Host "[Backend] API ready at http://127.0.0.1:8000/docs" -ForegroundColor Green
+            Write-Host "[Backend] API ready at http://127.0.0.1:7541/docs" -ForegroundColor Green
         } else {
             Write-Host "[Backend] Warning: Health check timed out, continuing anyway..." -ForegroundColor Yellow
         }

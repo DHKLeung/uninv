@@ -25,7 +25,7 @@ strategy builder, live prices, etc. (roadmap in `README.md`).
 - `scripts/start-desktop.ps1`: runs desktop app on Windows (`-Browser` for browser UI; `scripts/start-desktop.cmd`).
 - `scripts/start-all.sh`, `scripts/start-backend.sh`, `scripts/start-desktop.sh`: macOS/Linux equivalents for bash/zsh.
 
-Data flow: UI → `invoke("api_get", {path})` → Rust proxy → `http://<host>:8000/api/v1/...` →
+Data flow: UI → `invoke("api_get", {path})` → Rust proxy → `http://<host>:7541/api/v1/...` →
 FastAPI.
 
 ## Target platforms
@@ -67,7 +67,7 @@ FastAPI.
 
 ```powershell
 cd backend; uv sync                         # install deps
-cd backend; uv run uninv-backend --reload   # API :8000, docs at /docs
+cd backend; uv run uninv-backend --reload   # API :7541, docs at /docs
 cd backend; uv run pytest                   # tests (must pass before commit)
 cd backend; uv run ruff format .; uv run ruff check --fix .
 .\scripts\start-all.ps1                     # one-click: backend + desktop app (or .\scripts\start-all.cmd)
@@ -141,7 +141,7 @@ _Last updated: 2026-11-09_
   - About Subpage: Explains `uninv` meaning (**uni**fied + **inv**esting), version 0.1.0, architecture, and technology stack.
 - ✅ Clean scripts in `scripts/`:
   - `start-all` (`.ps1`, `.cmd`, `.sh`): launches backend + desktop app together with clean shutdown on exit. Uses `/health` verification and `-State Listen` TCP checks to prevent false-positive skips caused by Windows `TIME_WAIT` sockets.
-  - `start-backend` (`.ps1`, `.cmd`, `.sh`): launches FastAPI server only with auto-cleanup of unresponsive listeners on port 8000.
+  - `start-backend` (`.ps1`, `.cmd`, `.sh`): launches FastAPI server only with auto-cleanup of unresponsive listeners on port 7541.
   - `start-desktop` (`.ps1`, `.cmd`, `.sh`): launches Tauri desktop app (or `-Browser` mode).
 - ✅ Standalone Broker Daemon Architecture:
   - TWS verified and connected via socket API on port 7496.
@@ -216,11 +216,17 @@ _Last updated: 2026-11-09_
     - Updated all project markdown documentation (`README.md`, `backend/README.md`, `backend/AGENTS.md`, `desktop/AGENTS.md`, `docs/architecture.md`, `docs/trials_and_errors.md`, `gateways/ib_gateway/instruction.md`, `gateways/futu_gateway/instruction.md`).
     - 31/31 unit tests pass, Ruff check passes, Tauri `cargo check` passes.
 
-- ✅ v1.1.0 Days Left Column & Version Bump:
+- ✅ v1.1.0 Days Left Column, Auto-Refresh Interval & Port 7541 Migration:
   - Added `DAYS LEFT` column to Positions table located immediately right of `Last Trading Date` (13 columns total).
   - Calculates calendar date difference between today (UTC) and `last_trading_date` for options/futures derivatives; displays em-dash (`—`) for perpetual holdings (stocks, funds, crypto).
   - Auto-calculated in backend `Position` model via `@model_validator(mode="after")` and accompanied by client-side `calculateDaysLeft()` utility in `format.js`.
   - Smart null-at-bottom table column sorting: clicking `DAYS LEFT` sorts derivative contracts by expiration days (ascending or descending) while keeping non-expiring stocks cleanly pinned at the bottom.
   - Colspan dynamically updated to 13 on empty search/filter results.
+  - Auto-Refresh Interval Dropdown added to the Headbar immediately to the left of the refresh button:
+    - Options: `Manual`, `1 min`, `2 mins`, `5 mins`, `10 mins`.
+    - Only clickable when `Manual` is selected; disabled and styled with `not-allowed` / low opacity in automatic modes.
+    - Automatic overlap skipping: if a previous refresh is still active when interval triggers, skips cleanly without pile-up.
+  - Migrated backend port from `8000` to `7541` across Python config, Tauri Rust proxy, frontend API connector, launcher scripts, and all documentation to prevent collisions with third-party software.
+  - 1-Click Fresh Clone Launchers: added `start-all.bat` and `start-all.cmd` in repository root and auto-bootstrap `uv sync` in `start-all.ps1` if `.venv` is absent.
   - Bumped version to `1.1.0` across backend (`pyproject.toml`, `__init__.py`), desktop (`Cargo.toml`, `tauri.conf.json`), UI (`index.html`), and all documentation.
   - 32/32 tests pass, Ruff format/check pass, Tauri `cargo check` compiles cleanly, verified via headless browser render.

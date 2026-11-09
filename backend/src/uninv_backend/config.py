@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="UNINV_", env_file=".env", extra="ignore")
 
     host: str = "127.0.0.1"
-    port: int = 8000
+    port: int = 7541
 
     # Currency that every portfolio total is converted into.
     base_currency: str = "USD"

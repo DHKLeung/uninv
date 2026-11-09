@@ -17,7 +17,7 @@ This guide explains how to install, configure, and connect **Futu OpenD** (富�
                    │ Local TCP Socket
 ┌──────────────────▼─────────────────────┐
 │ uninv Python Backend (futu-api)        │
-│ FastAPI on http://127.0.0.1:8000       │
+│ FastAPI on http://127.0.0.1:7541       │
 └──────────────────┬─────────────────────┘
                    │
 ┌──────────────────▼─────────────────────┐

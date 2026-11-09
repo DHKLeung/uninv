@@ -288,6 +288,13 @@ body {
   color: var(--accent);
 }
 
+.btn-refresh:disabled:not(.loading) {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+  border-color: var(--border);
+}
+
 .btn-refresh .refresh-icon {
   width: 17px;
   height: 17px;
@@ -303,6 +310,35 @@ body {
   100% {
     transform: rotate(360deg);
   }
+}
+
+/* Auto-Refresh Controls Group */
+.refresh-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.refresh-interval-dropdown {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s ease;
+  height: 34px;
+}
+
+.refresh-interval-dropdown:hover {
+  border-color: var(--border-focus);
+}
+
+.refresh-interval-dropdown:focus {
+  border-color: var(--border-focus);
 }
 
 .btn:disabled {

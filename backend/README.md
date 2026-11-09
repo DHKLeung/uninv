@@ -12,13 +12,13 @@ Run all commands from the `backend/` directory:
 
 ```powershell
 uv sync                      # Create virtual environment and install dependencies
-uv run uninv-backend         # Start API server on http://127.0.0.1:8000 (auto-reload with --reload)
+uv run uninv-backend         # Start API server on http://127.0.0.1:7541 (auto-reload with --reload)
 uv run pytest                # Run test suite
 uv run ruff format .         # Format code
 uv run ruff check --fix .    # Lint and fix code
 ```
 
-Once running, interactive API docs are accessible at <http://127.0.0.1:8000/docs>.
+Once running, interactive API docs are accessible at <http://127.0.0.1:7541/docs>.
 
 ---
 

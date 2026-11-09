@@ -24,7 +24,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 /// Default backend address; override with the `UNINV_BACKEND_URL` environment variable.
-const DEFAULT_BACKEND_URL: &str = "http://127.0.0.1:8000";
+const DEFAULT_BACKEND_URL: &str = "http://127.0.0.1:7541";
 
 /// Shared state, created once at startup and handed to commands by Tauri.
 struct Backend {

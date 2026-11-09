@@ -45,6 +45,10 @@ const state = {
   search: "",
   sort: { key: "market_value", dir: -1 },
 
+  // Auto-refresh State
+  refreshInterval: "manual", // "manual", "1", "2", "5", "10"
+  isLoading: false,
+
   // Settings State
   settings: {
     isEditing: false,
@@ -117,14 +121,66 @@ function syncCurrencyDropdown(currencies) {
   }
 }
 
+let autoRefreshTimer = null;
+
+/**
+ * Update the refresh button appearance, disabled state, and tooltip title.
+ * Only clickable when refreshInterval is "manual".
+ */
+function updateRefreshButton() {
+  const btn = $("#refresh-btn");
+  if (!btn) return;
+  const isManual = state.refreshInterval === "manual";
+  if (state.isLoading) {
+    btn.disabled = true;
+    btn.classList.add("loading");
+    btn.title = "Refreshing portfolio…";
+  } else {
+    btn.classList.remove("loading");
+    btn.disabled = !isManual;
+    btn.title = isManual
+      ? "Refresh portfolio"
+      : `Auto-refresh active (${state.refreshInterval === "1" ? "1 min" : state.refreshInterval + " mins"}) - select Manual to refresh manually`;
+  }
+}
+
+/**
+ * Configure and schedule recurring auto-refresh timer.
+ * Skips overlaps if a previous refresh is still active when interval triggers.
+ */
+function scheduleAutoRefresh() {
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer);
+    autoRefreshTimer = null;
+  }
+
+  const intervalMinutes =
+    state.refreshInterval === "manual" ? 0 : parseInt(state.refreshInterval, 10);
+  if (intervalMinutes > 0) {
+    const ms = intervalMinutes * 60 * 1000;
+    autoRefreshTimer = setInterval(() => {
+      if (state.isLoading) {
+        console.log("Auto-refresh skipped: previous refresh still in progress");
+        return;
+      }
+      load();
+    }, ms);
+  }
+  updateRefreshButton();
+}
+
 /**
  * Global data refresh: pulls all broker data, account snapshots, and the full FX matrix.
  * Records finish timestamp as the authoritative 'As of' time.
+ * Skips execution if a refresh is already in progress.
  */
 async function load() {
-  const btn = $("#refresh-btn");
-  btn.disabled = true;
-  btn.classList.add("loading");
+  if (state.isLoading) {
+    console.log("Refresh call skipped: previous refresh still in progress");
+    return;
+  }
+  state.isLoading = true;
+  updateRefreshButton();
 
   const endpointTimestamps = [];
 
@@ -234,8 +290,8 @@ async function load() {
     setBackendStatus(false);
     showError(String(err?.message ?? err));
   } finally {
-    btn.disabled = false;
-    btn.classList.remove("loading");
+    state.isLoading = false;
+    updateRefreshButton();
   }
 }
 
@@ -934,8 +990,18 @@ function wireEvents() {
   setupSidebarNavigation();
   wireSettingsEvents();
 
-  // Head controls global data refresh
-  $("#refresh-btn").addEventListener("click", load);
+  // Head controls global data refresh (only clickable when in manual mode)
+  $("#refresh-btn").addEventListener("click", () => {
+    if (state.refreshInterval === "manual" && !state.isLoading) {
+      load();
+    }
+  });
+
+  // Auto-refresh interval selection
+  $("#refresh-interval-select").addEventListener("change", (e) => {
+    state.refreshInterval = e.target.value;
+    scheduleAutoRefresh();
+  });
 
   // FX currency selection is purely an instantaneous GUI recalculation
   $("#currency-select").addEventListener("change", (e) => {

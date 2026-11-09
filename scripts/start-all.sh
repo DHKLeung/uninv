@@ -19,15 +19,15 @@ echo "=========================================================="
 echo "  UNINV: Starting Backend + Desktop Application"
 echo "=========================================================="
 
-echo "[Backend] Starting FastAPI server on http://127.0.0.1:8000 ..."
+echo "[Backend] Starting FastAPI server on http://127.0.0.1:7541 ..."
 cd "${ROOT_DIR}/backend"
 uv run uninv-backend --reload &
 BACKEND_PID=$!
 
 # Wait for backend health
 for i in {1..20}; do
-  if curl -s http://127.0.0.1:8000/health >/dev/null 2>&1; then
-    echo "[Backend] API ready at http://127.0.0.1:8000/docs"
+  if curl -s http://127.0.0.1:7541/health >/dev/null 2>&1; then
+    echo "[Backend] API ready at http://127.0.0.1:7541/docs"
     break
   fi
   sleep 0.5
