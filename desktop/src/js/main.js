@@ -13,7 +13,7 @@
  * Section 1 Tiles -> Section 2 Account Values Board -> Section 3 Positions & Cash Balances.
  */
 
-import { apiGet, apiPost, backendUrl } from "./api.js";
+import { apiGet, apiPost, backendUrl, openUrl } from "./api.js";
 import {
   CURRENCY_SYMBOLS,
   calculateDaysLeft,
@@ -1034,6 +1034,15 @@ function wireEvents() {
       renderPositions();
     });
   }
+
+  // Handle external links (e.g. GitHub repo link in About page)
+  document.addEventListener("click", (e) => {
+    const link = e.target.closest("a[data-external]");
+    if (link) {
+      e.preventDefault();
+      openUrl(link.href);
+    }
+  });
 }
 
 wireEvents();

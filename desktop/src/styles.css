@@ -1209,3 +1209,15 @@ td.empty {
   color: var(--text);
   font-weight: 650;
 }
+
+.about-link {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 650;
+  transition: opacity 0.15s ease, text-decoration 0.15s ease;
+}
+
+.about-link:hover {
+  text-decoration: underline;
+  opacity: 0.85;
+}

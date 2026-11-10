@@ -1,6 +1,6 @@
 [project]
 name = "uninv-backend"
-version = "1.1.0"
+version = "1.2.0"
 description = "uninv Python backend: broker connectors and portfolio aggregation served over FastAPI."
 readme = "README.md"
 authors = [

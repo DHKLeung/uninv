@@ -156,6 +156,39 @@ fn set_backend_url(url: String, backend: tauri::State<'_, Backend>) -> Result<()
     Ok(())
 }
 
+/// Open an external URL in the default web browser (similar to Python's `webbrowser.open(url)`).
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("Invalid URL: must start with http:// or https://".to_string());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "", &url])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Forcefully terminates a process and all of its spawned child processes (process tree).
 /// On Windows, PyInstaller --onefile runs as a bootloader that spawns a child Python process.
 /// Standard child.kill() only kills the bootloader, leaving the child listening on port 7541.
@@ -378,7 +411,8 @@ pub fn run() {
             api_get,
             api_post,
             backend_url,
-            set_backend_url
+            set_backend_url,
+            open_url
         ])
         .build(tauri::generate_context!())
         .expect("error while building uninv");

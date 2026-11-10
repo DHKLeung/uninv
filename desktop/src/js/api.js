@@ -67,3 +67,16 @@ export async function apiPost(path, body) {
   }
   return res.json();
 }
+
+/** Open an external URL in the system browser. */
+export async function openUrl(url) {
+  if (inTauri) {
+    try {
+      await tauri.core.invoke("open_url", { url });
+      return;
+    } catch (e) {
+      console.warn("Failed to invoke open_url:", e);
+    }
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}

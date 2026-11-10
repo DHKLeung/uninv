@@ -33,3 +33,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Local draft release notes
+release_note_*.md

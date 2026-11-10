@@ -256,8 +256,10 @@ _Last updated: 2026-11-09_
     - Compiles the Python backend on each OS cloud runner via PyInstaller, feeds the host target triple sidecar binary to Tauri, and publishes all release assets to GitHub Releases upon tag push (`v*`) or manual `workflow_dispatch`.
   - Generated full release notes in `RELEASE_v1.1.0.md` detailing all inaugural features across brokers, architecture, FX matrix, portfolio boards, and gateway connectivity.
 
-- ✅ Sidecar Teardown Resilience & 15-Second Auto-Refresh Interval:
+- ✅ v1.2.0 Sidecar Teardown Resilience, 15-Second Auto-Refresh & Clickable GitHub Repo:
+  - Version bumped to `1.2.0` across backend (`pyproject.toml`, `__init__.py`), desktop (`Cargo.toml`, `tauri.conf.json`), UI (`index.html`), and all documentation.
   - Auto-Refresh Interval: added `15 secs` option immediately above `30 secs` in headbar dropdown (`desktop/src/index.html`).
+  - About Page: added clickable GitHub repository link `DHKLeung/uninv` targeting `https://github.com/DHKLeung/uninv`. Opens in default system browser in Tauri via new native `open_url` command (falling back to `window.open` in browser mode).
   - Sidecar Teardown Architecture (3-layer defense against orphaned backend processes):
     1. **Process Tree Termination on Exit:** Calling `child.kill()` on Windows only killed the PyInstaller bootloader stub, leaving the extracted child Python process (uvicorn) listening on port 7541. Desktop Rust layer now executes process tree termination (`taskkill /F /T /PID <pid>`) on Windows and `pkill -P` on Unix, ensuring all child and grandchild processes terminate.
     2. **Windows Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`):** The sidecar is assigned to an OS Job Object upon spawn. If the Tauri GUI crashes, hangs, or is killed via Task Manager, the Windows NT kernel automatically and unconditionally terminates all processes within the job object.
