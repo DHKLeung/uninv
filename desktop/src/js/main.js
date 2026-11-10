@@ -46,7 +46,7 @@ const state = {
   sort: { key: "market_value", dir: -1 },
 
   // Auto-refresh State
-  refreshInterval: "manual", // "manual", "1", "2", "5", "10"
+  refreshInterval: "manual", // "manual", "15", "30", "60", "120", "300", "600"
   isLoading: false,
 
   // Settings State
@@ -113,6 +113,7 @@ function syncCurrencyDropdown(currencies) {
 let autoRefreshTimer = null;
 
 const INTERVAL_LABELS = {
+  "15": "15 secs",
   "30": "30 secs",
   "60": "1 min",
   "120": "2 mins",

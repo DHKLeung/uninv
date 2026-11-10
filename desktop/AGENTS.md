@@ -5,7 +5,7 @@ any Rust change in plain terms with Python comparisons.
 
 ## Layout
 - `src/`: the UI, served as-is (Tauri `frontendDist: "../src"`, no `devUrl`, no build step).
-  - `index.html`: structured into Global Headbar (as-of tooltip, currency selector, auto-refresh interval dropdown, circular refresh button), Sidebar (Portfolio, Settings, About), and main view containers.
+  - `index.html`: structured into Global Headbar (as-of tooltip, currency selector, auto-refresh interval dropdown with `Manual`, `15 secs`, `30 secs`, `1 min`, `2 mins`, `5 mins`, `10 mins`, circular refresh button), Sidebar (Portfolio, Settings, About), and main view containers.
   - `styles.css`: dark theme design system (`:root` variables), hairline borders, stacked cells, and modal/tooltip styles.
   - `assets/`: Purple square app icons (`icon.svg`, `icon.png`, `favicon.png`).
   - `js/api.js`: `apiGet(path)` and `apiPost(path, body)`. Uses Tauri `invoke("api_get")` / `invoke("api_post")` inside the app and falls back to `fetch()` in browser mode.

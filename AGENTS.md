@@ -258,7 +258,7 @@ _Last updated: 2026-11-09_
 
 - ✅ v1.2.0 Sidecar Teardown Resilience, 15-Second Auto-Refresh & Clickable GitHub Repo:
   - Version bumped to `1.2.0` across backend (`pyproject.toml`, `__init__.py`), desktop (`Cargo.toml`, `tauri.conf.json`), UI (`index.html`), and all documentation.
-  - Auto-Refresh Interval: added `15 secs` option immediately above `30 secs` in headbar dropdown (`desktop/src/index.html`).
+  - Auto-Refresh Interval: added `15 secs` option immediately above `30 secs` in headbar dropdown (`desktop/src/index.html`), supporting `Manual`, `15 secs`, `30 secs`, `1 min`, `2 mins`, `5 mins`, and `10 mins`.
   - About Page: added clickable GitHub repository link `DHKLeung/uninv` targeting `https://github.com/DHKLeung/uninv`. Opens in default system browser in Tauri via new native `open_url` command (falling back to `window.open` in browser mode).
   - Sidecar Teardown Architecture (3-layer defense against orphaned backend processes):
     1. **Process Tree Termination on Exit:** Calling `child.kill()` on Windows only killed the PyInstaller bootloader stub, leaving the extracted child Python process (uvicorn) listening on port 7541. Desktop Rust layer now executes process tree termination (`taskkill /F /T /PID <pid>`) on Windows and `pkill -P` on Unix, ensuring all child and grandchild processes terminate.
