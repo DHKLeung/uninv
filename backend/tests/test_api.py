@@ -761,3 +761,16 @@ def test_position_days_left_calculation() -> None:
         last_trading_date=None,
     )
     assert pos_stock.days_left is None
+
+
+def test_is_parent_alive() -> None:
+    """Test parent process liveness check for self and non-existent PID."""
+    import os
+
+    from uninv_backend import is_parent_alive
+
+    # The current running process is alive
+    assert is_parent_alive(os.getpid()) is True
+
+    # A non-existent PID (e.g. 99999999) is not alive
+    assert is_parent_alive(99999999) is False

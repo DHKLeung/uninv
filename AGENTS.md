@@ -255,3 +255,12 @@ _Last updated: 2026-11-09_
     - Added `.github/workflows/release.yml` targeting `windows-latest` (NSIS `.exe` + `.msi`), `macos-latest` (`.dmg`), and `ubuntu-22.04` (`.deb` + `.AppImage`).
     - Compiles the Python backend on each OS cloud runner via PyInstaller, feeds the host target triple sidecar binary to Tauri, and publishes all release assets to GitHub Releases upon tag push (`v*`) or manual `workflow_dispatch`.
   - Generated full release notes in `RELEASE_v1.1.0.md` detailing all inaugural features across brokers, architecture, FX matrix, portfolio boards, and gateway connectivity.
+
+- ✅ Sidecar Teardown Resilience & 15-Second Auto-Refresh Interval:
+  - Auto-Refresh Interval: added `15 secs` option immediately above `30 secs` in headbar dropdown (`desktop/src/index.html`).
+  - Sidecar Teardown Architecture (3-layer defense against orphaned backend processes):
+    1. **Process Tree Termination on Exit:** Calling `child.kill()` on Windows only killed the PyInstaller bootloader stub, leaving the extracted child Python process (uvicorn) listening on port 7541. Desktop Rust layer now executes process tree termination (`taskkill /F /T /PID <pid>`) on Windows and `pkill -P` on Unix, ensuring all child and grandchild processes terminate.
+    2. **Windows Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`):** The sidecar is assigned to an OS Job Object upon spawn. If the Tauri GUI crashes, hangs, or is killed via Task Manager, the Windows NT kernel automatically and unconditionally terminates all processes within the job object.
+    3. **Python Parent Watchdog (`--parent-pid`):** Desktop passes `--parent-pid <tauri_pid>` to `uninv-backend`. A background daemon thread in Python monitors the parent process handle (via `WaitForSingleObject` / `OpenProcess` on Windows or `os.kill(pid, 0)` on Unix) and immediately terminates (`os._exit(0)`) if the parent process dies.
+    4. **Lifecycle Hooks:** Sidecar cleanup is triggered on `WindowEvent::CloseRequested`, `WindowEvent::Destroyed`, `RunEvent::ExitRequested`, and `RunEvent::Exit`.
+  - 33/33 tests pass, Ruff check/format pass, Tauri `cargo check` passes cleanly.

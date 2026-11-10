@@ -24,7 +24,7 @@ any Rust change in plain terms with Python comparisons.
       - Live connection testing via `/api/v1/broker-connection-test` with status badges.
     - About Page: displays app icon, `uninv`, `Unified Investing`, description, Version: `1.1.0`, Author: `DHKLeung`.
 - `src-tauri/`: Rust shell.
-  - `src/lib.rs`: `Backend` state (reqwest client and base URL from `UNINV_BACKEND_URL` / `RwLock`); commands `api_get`, `api_post`, `backend_url`, and `set_backend_url`.
+  - `src/lib.rs`: `Backend` state (reqwest client and base URL from `UNINV_BACKEND_URL` / `RwLock`); commands `api_get`, `api_post`, `backend_url`, and `set_backend_url`. Manages sidecar lifecycle with Windows Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`), process tree kill (`taskkill /F /T`), `--parent-pid` argument passing, and exit hooks on `CloseRequested`, `Destroyed`, and `Exit`.
   - `tauri.conf.json`: window config, CSP, bundle, and icons.
   - `icons/`: purple square app icon in `.ico`, `.png`, and multiple resolutions.
 

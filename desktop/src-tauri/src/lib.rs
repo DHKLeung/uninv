@@ -156,38 +156,207 @@ fn set_backend_url(url: String, backend: tauri::State<'_, Backend>) -> Result<()
     Ok(())
 }
 
+/// Forcefully terminates a process and all of its spawned child processes (process tree).
+/// On Windows, PyInstaller --onefile runs as a bootloader that spawns a child Python process.
+/// Standard child.kill() only kills the bootloader, leaving the child listening on port 7541.
+/// `taskkill /F /T` terminates the entire tree.
+fn kill_process_tree(pid: u32) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new("pkill")
+            .args(["-P", &pid.to_string()])
+            .output();
+    }
+}
+
+/// Safely terminates the sidecar child and cleans up its process tree.
+fn terminate_sidecar(sidecar_child: &Arc<Mutex<Option<CommandChild>>>) {
+    if let Some(child) = sidecar_child.lock().unwrap().take() {
+        let pid = child.pid();
+        eprintln!("[uninv] Terminating sidecar process tree (PID {pid}) on app exit");
+        kill_process_tree(pid);
+        let _ = child.kill();
+    }
+}
+
+#[cfg(windows)]
+mod win_job {
+    use std::mem::size_of;
+    use std::ptr::null_mut;
+
+    type HANDLE = *mut std::ffi::c_void;
+    type BOOL = i32;
+    type DWORD = u32;
+
+    const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: DWORD = 0x2000;
+    const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION: i32 = 9;
+    const PROCESS_SET_QUOTA: DWORD = 0x0100;
+    const PROCESS_TERMINATE: DWORD = 0x0001;
+
+    #[repr(C)]
+    struct IO_COUNTERS {
+        read_operation_count: u64,
+        write_operation_count: u64,
+        other_operation_count: u64,
+        read_transfer_count: u64,
+        write_transfer_count: u64,
+        other_transfer_count: u64,
+    }
+
+    #[repr(C)]
+    struct JOBOBJECT_BASIC_LIMIT_INFORMATION {
+        per_process_user_time_limit: i64,
+        per_job_user_time_limit: i64,
+        limit_flags: DWORD,
+        minimum_working_set_size: usize,
+        maximum_working_set_size: usize,
+        active_process_limit: DWORD,
+        affinity: usize,
+        priority_class: DWORD,
+        scheduling_class: DWORD,
+    }
+
+    #[repr(C)]
+    struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+        basic_limit_information: JOBOBJECT_BASIC_LIMIT_INFORMATION,
+        io_info: IO_COUNTERS,
+        process_memory_limit: usize,
+        job_memory_limit: usize,
+        peak_process_memory_used: usize,
+        peak_job_memory_used: usize,
+    }
+
+    extern "system" {
+        fn CreateJobObjectW(lpJobAttributes: *mut std::ffi::c_void, lpName: *const u16) -> HANDLE;
+        fn SetInformationJobObject(
+            hJob: HANDLE,
+            JobObjectInformationClass: i32,
+            lpJobObjectInformation: *mut std::ffi::c_void,
+            cbJobObjectInformationLength: DWORD,
+        ) -> BOOL;
+        fn AssignProcessToJobObject(hJob: HANDLE, hProcess: HANDLE) -> BOOL;
+        fn OpenProcess(dwDesiredAccess: DWORD, bInheritHandle: BOOL, dwProcessId: DWORD) -> HANDLE;
+        fn CloseHandle(hObject: HANDLE) -> BOOL;
+    }
+
+    /// Windows Job Object wrapper (comparable to Python's win32job in pywin32).
+    /// When the JobObject handle closes or the parent process terminates (even unexpectedly),
+    /// the Windows kernel automatically terminates all processes in the job object.
+    pub struct JobObject(HANDLE);
+    unsafe impl Send for JobObject {}
+    unsafe impl Sync for JobObject {}
+
+    impl JobObject {
+        pub fn create_kill_on_close() -> Option<Self> {
+            unsafe {
+                let job = CreateJobObjectW(null_mut(), null_mut());
+                if job.is_null() {
+                    return None;
+                }
+                let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                info.basic_limit_information.limit_flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                let ok = SetInformationJobObject(
+                    job,
+                    JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+                    &mut info as *mut _ as *mut std::ffi::c_void,
+                    size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as DWORD,
+                );
+                if ok == 0 {
+                    CloseHandle(job);
+                    return None;
+                }
+                Some(JobObject(job))
+            }
+        }
+
+        pub fn assign_process(&self, pid: u32) -> bool {
+            unsafe {
+                let proc_handle = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
+                if proc_handle.is_null() {
+                    return false;
+                }
+                let ok = AssignProcessToJobObject(self.0, proc_handle);
+                CloseHandle(proc_handle);
+                ok != 0
+            }
+        }
+    }
+
+    impl Drop for JobObject {
+        fn drop(&mut self) {
+            unsafe {
+                if !self.0.is_null() {
+                    CloseHandle(self.0);
+                }
+            }
+        }
+    }
+}
+
 /// App entry point, called from `main.rs` (or mobile runtime).
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let sidecar_child: Arc<Mutex<Option<CommandChild>>> = Arc::new(Mutex::new(None));
-    let sidecar_child_clone = sidecar_child.clone();
+    let sidecar_child_setup = sidecar_child.clone();
+    let sidecar_child_win = sidecar_child.clone();
+    let sidecar_child_exit = sidecar_child.clone();
 
-    tauri::Builder::default()
+    #[cfg(windows)]
+    let job_object_holder: Arc<Mutex<Option<win_job::JobObject>>> = Arc::new(Mutex::new(None));
+    #[cfg(windows)]
+    let job_object_setup = job_object_holder.clone();
+
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(Backend::from_env())
         .setup(move |app| {
             // If backend is already running (e.g. dev mode), do not start another instance
             if !is_backend_listening() {
+                let current_pid = std::process::id();
                 match app.shell().sidecar("uninv-backend") {
-                    Ok(command) => match command.spawn() {
-                        Ok((_rx, child)) => {
-                            eprintln!("[uninv] Spawned Python backend sidecar");
-                            *sidecar_child_clone.lock().unwrap() = Some(child);
+                    Ok(command) => {
+                        let command = command.args(["--parent-pid", &current_pid.to_string()]);
+                        match command.spawn() {
+                            Ok((_rx, child)) => {
+                                let pid = child.pid();
+                                eprintln!("[uninv] Spawned Python backend sidecar (PID {pid}) with parent PID {current_pid}");
 
-                            // Poll until backend is ready (up to 15s)
-                            for _ in 0..30 {
-                                std::thread::sleep(Duration::from_millis(500));
-                                if is_backend_listening() {
-                                    eprintln!("[uninv] Python backend is listening on port 7541");
-                                    std::thread::sleep(Duration::from_millis(200));
-                                    break;
+                                #[cfg(windows)]
+                                {
+                                    if let Some(job) = win_job::JobObject::create_kill_on_close() {
+                                        if job.assign_process(pid) {
+                                            eprintln!("[uninv] Assigned sidecar PID {pid} to Windows Job Object (KILL_ON_JOB_CLOSE)");
+                                            *job_object_setup.lock().unwrap() = Some(job);
+                                        }
+                                    }
+                                }
+
+                                *sidecar_child_setup.lock().unwrap() = Some(child);
+
+                                // Poll until backend is ready (up to 15s)
+                                for _ in 0..30 {
+                                    std::thread::sleep(Duration::from_millis(500));
+                                    if is_backend_listening() {
+                                        eprintln!("[uninv] Python backend is listening on port 7541");
+                                        std::thread::sleep(Duration::from_millis(200));
+                                        break;
+                                    }
                                 }
                             }
+                            Err(e) => {
+                                eprintln!("[uninv] Failed to spawn sidecar: {e}");
+                            }
                         }
-                        Err(e) => {
-                            eprintln!("[uninv] Failed to spawn sidecar: {e}");
-                        }
-                    },
+                    }
                     Err(e) => {
                         eprintln!("[uninv] Sidecar not found or not configured: {e}");
                     }
@@ -198,11 +367,11 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(move |_window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
-                if let Some(child) = sidecar_child.lock().unwrap().take() {
-                    eprintln!("[uninv] Terminating sidecar process on app exit");
-                    let _ = child.kill();
+            match event {
+                tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed => {
+                    terminate_sidecar(&sidecar_child_win);
                 }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -211,6 +380,12 @@ pub fn run() {
             backend_url,
             set_backend_url
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running uninv");
+        .build(tauri::generate_context!())
+        .expect("error while building uninv");
+
+    app.run(move |_app_handle, event| {
+        if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
+            terminate_sidecar(&sidecar_child_exit);
+        }
+    });
 }
