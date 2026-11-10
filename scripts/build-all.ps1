@@ -18,7 +18,7 @@ $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
 $env:Path = "$machinePath;$userPath;$env:USERPROFILE\.local\bin;$env:USERPROFILE\.cargo\bin;$env:Path"
 
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "  UNINV: Building Production Release (v1.1.0)" -ForegroundColor Cyan
+Write-Host "  UNINV: Building Production Release (v1.2.0)" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 # 1. Resolve target triple from rustc
